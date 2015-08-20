@@ -14,3 +14,9 @@ try:
     Cmd('false').run()
 except CheckedError as e:
     print('error:', e)
+
+print('pipe:',
+      Cmd('cat', '/dev/zero')
+      .pipe('head', '-c', 10)
+      .pipe('cat', '-vet')
+      .read())
