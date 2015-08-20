@@ -4,14 +4,14 @@ import subprocess
 
 class Cmd:
     def __init__(self, prog, *args):
-        self._cmd = (prog,) + args
+        self._cmd = tuple(str(i) for i in (prog,) + args)
 
-    def result(self, check=True, strip=True, bytes=False, capture_stdout=True,
-               capture_stderr=False):
+    def result(self, check=True, strip=True, bytes=False, stdout=True,
+               stderr=False):
         p = subprocess.Popen(
             self._cmd,
-            stdout=subprocess.PIPE if capture_stdout else None,
-            stderr=subprocess.PIPE if capture_stderr else None,
+            stdout=subprocess.PIPE if stdout else None,
+            stderr=subprocess.PIPE if stderr else None,
             universal_newlines=not bytes)
         stdout, stderr = p.communicate()
         if strip:
@@ -22,8 +22,8 @@ class Cmd:
             raise CheckedError(result)
         return result
 
-    def run(self, capture_stdout=False, **kwargs):
-        return self.result(capture_stdout=capture_stdout, **kwargs)
+    def run(self, stdout=False, **kwargs):
+        return self.result(stdout=stdout, **kwargs)
 
     def read(self, **kwargs):
         return self.result(**kwargs).stdout

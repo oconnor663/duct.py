@@ -6,7 +6,7 @@ Cmd('echo', 'hello', 'world').run()
 
 print('output: "{}"'.format(Cmd('echo', 'some     stuff').read()))
 
-print('result:', Cmd('true').result(capture_stderr=True))
+print('result:', Cmd('true').result(stderr=True))
 
 try:
     Cmd('false').run()
