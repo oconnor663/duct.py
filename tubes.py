@@ -6,11 +6,13 @@ class Cmd:
     def __init__(self, prog, *args):
         self._cmd = (prog,) + args
 
-    def _run(self, check, strip=True, bytes=False, **kwargs):
+    def result(self, check=True, strip=True, bytes=False, capture_stdout=True,
+               capture_stderr=False):
         p = subprocess.Popen(
             self._cmd,
-            universal_newlines=not bytes,
-            **kwargs)
+            stdout=subprocess.PIPE if capture_stdout else None,
+            stderr=subprocess.PIPE if capture_stderr else None,
+            universal_newlines=not bytes)
         stdout, stderr = p.communicate()
         if strip:
             stdout = stdout and stdout.strip()
@@ -20,16 +22,11 @@ class Cmd:
             raise CheckedError(result)
         return result
 
-    def run(self, check=True):
-        return self._run(check)
+    def run(self, capture_stdout=False, **kwargs):
+        return self.result(capture_stdout=capture_stdout, **kwargs)
 
     def read(self, **kwargs):
         return self.result(**kwargs).stdout
-
-    def result(self, check=True, capture_stderr=False, bytes=False,
-               strip=True):
-        stderr = subprocess.PIPE if capture_stderr else None
-        return self._run(check, stdout=subprocess.PIPE, stderr=stderr)
 
 
 Result = collections.namedtuple(
