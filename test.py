@@ -6,7 +6,7 @@ Cmd('echo', 'hello', 'world').run()
 
 print('output: "{}"'.format(Cmd('echo', 'some     stuff').read()))
 
-print('result:', Cmd('true').result(stderr=True))
+print('result:', Cmd('echo', 'more stuff').result(stderr=True))
 
 print('random:', Cmd('head', '-c', 10, '/dev/urandom').read(bytes=True))
 

@@ -13,7 +13,7 @@ class Cmd:
         self._pipeline.append(cmd)
         return self
 
-    def result(self, check=True, strip=True, bytes=False, stdout=True,
+    def result(self, check=True, trim=False, bytes=False, stdout=True,
                stderr=False):
         last_proc = None
         # Kick off all but the final pipelined command.
@@ -35,9 +35,10 @@ class Cmd:
         # Allow last_proc to receive SIGPIPE. TODO: Deduplicate this.
         last_proc and last_proc.stdout.close()
         stdout, stderr = p.communicate()
-        if strip:
-            stdout = stdout and stdout.strip()
-            stderr = stderr and stderr.strip()
+        if trim:
+            newlines = b'\n\r' if bytes else '\n\r'
+            stdout = stdout and stdout.rstrip(newlines)
+            stderr = stderr and stderr.rstrip(newlines)
         result = Result(p.returncode, stdout, stderr)
         if check and p.returncode != 0:
             raise CheckedError(result, self._pipeline)
@@ -46,8 +47,8 @@ class Cmd:
     def run(self, stdout=False, **kwargs):
         return self.result(stdout=stdout, **kwargs)
 
-    def read(self, **kwargs):
-        return self.result(**kwargs).stdout
+    def read(self, trim=True, **kwargs):
+        return self.result(trim=trim, **kwargs).stdout
 
 
 Result = collections.namedtuple(
