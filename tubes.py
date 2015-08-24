@@ -1,5 +1,53 @@
 import collections
+import os
 import subprocess
+import trollius
+from trollius import From, Return
+
+
+class _Command:
+    def __init__(self, prog, *args):
+        self._tuple = (prog,) + args
+
+    @trollius.coroutine
+    def _exec(self, stdin, stdout, stderr):
+        p = yield From(trollius.subprocess.create_subprocess_exec(
+            *self._tuple, stdin=stdin, stdout=stdout, stderr=stderr))
+        out, err = yield From(p.communicate())
+        raise Return(Result(p.returncode, out, err))
+
+
+class _OperatorBase:
+    def __init__(self, left, right):
+        self._left = left
+        self._right = right
+
+    def _exec(self, stdin, stdout, stderr):
+        raise NotImplementedError
+
+
+class _And(_OperatorBase):
+    @trollius.coroutine
+    def _exec(self, stdin, stdout, stderr):
+        lresult = yield From(self._left._exec(stdin, stdout, stderr))
+        if lresult.returncode != 0:
+            raise Return(lresult)
+        rresult = yield From(self._right._exec(stdin, stdout, stderr))
+        raise Return(lresult.merge(rresult))
+
+
+class _Pipe(_OperatorBase):
+    @trollius.coroutine
+    def _exec(self, stdin, stdout, stderr):
+        pipe_out, pipe_in = os.pipe()
+        lfuture = self._left._exec(stdin, pipe_in, stderr)
+        rfuture = self._left._exec(pipe_out, stdout, stderr)
+        lresult, rresult = yield From(trollius.gather(lfuture, rfuture))
+        returncode = rresult.returncode
+        # Return the rightmost error code, if any.
+        if returncode == 0:
+            returncode = lresult.returncode
+        raise lresult.merge(rresult)._replace(returncode=returncode)
 
 
 class Cmd:
