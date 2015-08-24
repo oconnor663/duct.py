@@ -51,8 +51,25 @@ class Cmd:
         return self.result(trim=trim, **kwargs).stdout
 
 
-Result = collections.namedtuple(
-    'Result', ['returncode', 'stdout', 'stderr'])
+_ResultBase = collections.namedtuple(
+    '_ResultBase', ['returncode', 'stdout', 'stderr'])
+
+
+class Result(_ResultBase):
+    # When merging two results (for example, A && B), take the second return
+    # code and concatenate both the outputs.
+    def merge(self, second):
+        return Result(second.returncode,
+                      self._concat(self.stdout, second.stdout),
+                      self._concat(self.stderr, second.stderr))
+
+    @staticmethod
+    def _concat(out1, out2):
+        if out1 is None:
+            return out2
+        if out2 is None:
+            return out1
+        return out1 + out2
 
 
 class CheckedError(Exception):
