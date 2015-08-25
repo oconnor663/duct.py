@@ -5,7 +5,18 @@ import trollius
 from trollius import From, Return
 
 
-class _Command:
+class ExpressionBase:
+    @trollius.coroutine
+    def _exec(self, stdin, stdout, stderr):
+        raise NotImplementedError
+
+    def result(self):
+        loop = trollius.get_event_loop()
+        return loop.run_until_complete(self._exec(
+            stdin=None, stdout=subprocess.PIPE, stderr=None))
+
+
+class Command(ExpressionBase):
     def __init__(self, prog, *args):
         self._tuple = (prog,) + args
 
@@ -17,37 +28,40 @@ class _Command:
         raise Return(Result(p.returncode, out, err))
 
 
-class _OperatorBase:
+class OperationBase(ExpressionBase):
     def __init__(self, left, right):
         self._left = left
         self._right = right
 
-    def _exec(self, stdin, stdout, stderr):
-        raise NotImplementedError
 
-
-class _And(_OperatorBase):
+class And(OperationBase):
     @trollius.coroutine
     def _exec(self, stdin, stdout, stderr):
+        # Execute the first expression.
         lresult = yield From(self._left._exec(stdin, stdout, stderr))
+        # If it returns non-zero short-circuit.
         if lresult.returncode != 0:
             raise Return(lresult)
+        # Otherwise execute the second expression.
         rresult = yield From(self._right._exec(stdin, stdout, stderr))
         raise Return(lresult.merge(rresult))
 
 
-class _Pipe(_OperatorBase):
+class Pipe(OperationBase):
     @trollius.coroutine
     def _exec(self, stdin, stdout, stderr):
+        # Open a read/write pipe.
         pipe_out, pipe_in = os.pipe()
+        # Execute both expressions in parallel, connected by the pipe.
         lfuture = self._left._exec(stdin, pipe_in, stderr)
         rfuture = self._left._exec(pipe_out, stdout, stderr)
         lresult, rresult = yield From(trollius.gather(lfuture, rfuture))
-        returncode = rresult.returncode
-        # Return the rightmost error code, if any.
-        if returncode == 0:
-            returncode = lresult.returncode
-        raise lresult.merge(rresult)._replace(returncode=returncode)
+        # Return the rightmost error, if any.
+        rightmosterror = rresult.returncode
+        if rightmosterror == 0:
+            rightmosterror = lresult.returncode
+        ret = lresult.merge(rresult)._replace(returncode=rightmosterror)
+        raise Return(ret)
 
 
 class Cmd:
