@@ -7,13 +7,13 @@ from trollius import From, Return
 
 class ExpressionBase:
     @trollius.coroutine
-    def _exec(self, stdin, stdout, stderr):
+    def _exec(self, loop, stdin, stdout, stderr):
         raise NotImplementedError
 
     def result(self):
         loop = trollius.get_event_loop()
         return loop.run_until_complete(self._exec(
-            stdin=None, stdout=subprocess.PIPE, stderr=None))
+            loop, None, subprocess.PIPE, None))
 
 
 class Command(ExpressionBase):
@@ -21,9 +21,10 @@ class Command(ExpressionBase):
         self._tuple = (prog,) + args
 
     @trollius.coroutine
-    def _exec(self, stdin, stdout, stderr):
+    def _exec(self, loop, stdin, stdout, stderr):
         p = yield From(trollius.subprocess.create_subprocess_exec(
-            *self._tuple, stdin=stdin, stdout=stdout, stderr=stderr))
+            *self._tuple, loop=loop, stdin=stdin, stdout=stdout,
+            stderr=stderr))
         out, err = yield From(p.communicate())
         raise Return(Result(p.returncode, out, err))
 
@@ -36,26 +37,36 @@ class OperationBase(ExpressionBase):
 
 class And(OperationBase):
     @trollius.coroutine
-    def _exec(self, stdin, stdout, stderr):
+    def _exec(self, loop, stdin, stdout, stderr):
         # Execute the first expression.
-        lresult = yield From(self._left._exec(stdin, stdout, stderr))
+        lresult = yield From(self._left._exec(loop, stdin, stdout, stderr))
         # If it returns non-zero short-circuit.
         if lresult.returncode != 0:
             raise Return(lresult)
         # Otherwise execute the second expression.
-        rresult = yield From(self._right._exec(stdin, stdout, stderr))
+        rresult = yield From(self._right._exec(loop, stdin, stdout, stderr))
         raise Return(lresult.merge(rresult))
 
 
 class Pipe(OperationBase):
     @trollius.coroutine
-    def _exec(self, stdin, stdout, stderr):
-        # Open a read/write pipe.
+    def _exec(self, loop, stdin, stdout, stderr):
+        # Open a read/write pipe. The write end gets passed to the left as
+        # stdout, and the read end gets passed to the right as stdin. Either
+        # side could be a compound expression (like A && B), so we have to wait
+        # until each expression is completely finished before we can close its
+        # end of the pipe. Closing the write end allows the right side to
+        # receive EOF, and closing the read end allows the left side to receive
+        # SIGPIPE.
         read_pipe, write_pipe = os.pipe()
-        # Execute both expressions in parallel, connected by the pipe.
-        lfuture = self._left._exec(stdin, write_pipe, stderr)
-        rfuture = self._right._exec(read_pipe, stdout, stderr)
-        lresult, rresult = yield From(trollius.gather(lfuture, rfuture))
+        lfuture = loop.create_task(self._left._exec(
+            loop, stdin, write_pipe, stderr))
+        lfuture.add_done_callback(lambda f: os.close(write_pipe))
+        rfuture = loop.create_task(self._right._exec(
+            loop, read_pipe, stdout, stderr))
+        rfuture.add_done_callback(lambda f: os.close(read_pipe))
+        rresult = yield From(rfuture)
+        lresult = yield From(lfuture)
         # Return the rightmost error, if any.
         rightmosterror = rresult.returncode
         if rightmosterror == 0:
