@@ -5,15 +5,26 @@ import trollius
 from trollius import From, Return
 
 
+def run_single_use_loop(loop, task):
+    old_loop = trollius.get_event_loop()
+    try:
+        trollius.set_event_loop(loop)
+        ret = loop.run_until_complete(task)
+    finally:
+        trollius.set_event_loop(old_loop)
+        loop.close()
+    return ret
+
+
 class ExpressionBase:
     @trollius.coroutine
     def _exec(self, loop, stdin, stdout, stderr):
         raise NotImplementedError
 
     def result(self):
-        loop = trollius.get_event_loop()
-        return loop.run_until_complete(self._exec(
-            loop, None, subprocess.PIPE, None))
+        loop = trollius.new_event_loop()
+        task = self._exec(loop, None, subprocess.PIPE, None)
+        return run_single_use_loop(loop, task)
 
 
 class Command(ExpressionBase):
