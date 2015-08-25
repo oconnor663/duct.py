@@ -1,22 +1,22 @@
 #! /usr/bin/env python
 
-from tubes import Cmd, CheckedError
+from tubes import cmd, CheckedError
 
-Cmd('echo', 'hello', 'world').run()
+cmd('echo', 'hello', 'world').run()
 
-print('output: "{}"'.format(Cmd('echo', 'some     stuff').read()))
+print('output: "{}"'.format(cmd('echo', 'some     stuff').read()))
 
-print('result:', Cmd('echo', 'more stuff').result(stderr=True))
+print('result:', cmd('echo', 'more stuff').result(stderr=True))
 
-print('random:', Cmd('head', '-c', 10, '/dev/urandom').read(bytes=True))
+print('random:', cmd('head', '-c', '10', '/dev/urandom').read(bytes=True))
 
 try:
-    Cmd('false').run()
+    cmd('false').run()
 except CheckedError as e:
     print('error:', e)
 
 print('pipe:',
-      Cmd('cat', '/dev/zero')
-      .pipe('head', '-c', 10)
+      cmd('cat', '/dev/zero')
+      .pipe('head', '-c', '10')
       .pipe('cat', '-vet')
-      .read())
+      .read(check=False))
