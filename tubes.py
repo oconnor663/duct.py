@@ -6,6 +6,8 @@ from trollius import From, Return
 
 
 def run_single_use_loop(loop, task):
+    '''The event loop can only listen for finished child processes if it is set
+    as the current loop of the main thread.'''
     old_loop = trollius.get_event_loop()
     try:
         trollius.set_event_loop(loop)
