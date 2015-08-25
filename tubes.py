@@ -51,10 +51,10 @@ class Pipe(OperationBase):
     @trollius.coroutine
     def _exec(self, stdin, stdout, stderr):
         # Open a read/write pipe.
-        pipe_out, pipe_in = os.pipe()
+        read_pipe, write_pipe = os.pipe()
         # Execute both expressions in parallel, connected by the pipe.
-        lfuture = self._left._exec(stdin, pipe_in, stderr)
-        rfuture = self._left._exec(pipe_out, stdout, stderr)
+        lfuture = self._left._exec(stdin, write_pipe, stderr)
+        rfuture = self._right._exec(read_pipe, stdout, stderr)
         lresult, rresult = yield From(trollius.gather(lfuture, rfuture))
         # Return the rightmost error, if any.
         rightmosterror = rresult.returncode
