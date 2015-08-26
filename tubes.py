@@ -1,3 +1,4 @@
+import atexit
 import collections
 import os
 import subprocess
@@ -16,13 +17,16 @@ class ExpressionBase:
 
     def result(self, check=True, trim=False, bytes=False, stdout=True,
                stderr=False):
-        loop = trollius.new_event_loop()
-        task = self._exec(
-            loop=loop,
-            stdin=None,
-            stdout=subprocess.PIPE if stdout else None,
-            stderr=subprocess.PIPE if stderr else None)
-        result = run_single_use_loop(loop, task)
+        # It's very unclear to me how to use the event loop properly for this.
+        # I'm doing my best to refactor these nasty details into a separate
+        # function.
+        def get_task(loop):
+            return self._exec(
+                loop=loop,
+                stdin=None,
+                stdout=subprocess.PIPE if stdout else None,
+                stderr=subprocess.PIPE if stderr else None)
+        result = _run_async_task(get_task)
         if trim:
             result = result.trim()
         if not bytes:
@@ -101,19 +105,6 @@ class Pipe(OperationBase):
         raise Return(ret)
 
 
-def run_single_use_loop(loop, task):
-    '''The event loop can only listen for finished child processes if it is set
-    as the current loop of the main thread.'''
-    old_loop = trollius.get_event_loop()
-    try:
-        trollius.set_event_loop(loop)
-        ret = loop.run_until_complete(task)
-    finally:
-        trollius.set_event_loop(old_loop)
-        loop.close()
-    return ret
-
-
 _ResultBase = collections.namedtuple(
     '_ResultBase', ['returncode', 'stdout', 'stderr'])
 
@@ -166,3 +157,16 @@ class CheckedError(Exception):
     def __str__(self):
         return 'Command "{}" returned non-zero exit status {}'.format(
             self.expression, self.result.returncode)
+
+
+# It's completely unclear to me how to run our coroutines without disrupting
+# asyncio callers outside this library. This funciton is the best I've got so
+# far. Further questions:
+#   https://redd.it/3id0fb
+#   https://gist.github.com/oconnor663/f0ddad2c0bd1f7cf14c2
+def _run_async_task(get_task):
+    loop = trollius.get_event_loop()
+    atexit.register(loop.close)
+    task = get_task(loop)
+    result = loop.run_until_complete(task)
+    return result

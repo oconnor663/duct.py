@@ -1,5 +1,8 @@
 #! /usr/bin/env python
 
+import os
+os.environ['TROLLIUSDEBUG'] = '1'
+
 from tubes import cmd, CheckedError
 
 cmd('echo', 'hello', 'world').run()
