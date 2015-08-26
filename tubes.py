@@ -45,6 +45,10 @@ class ExpressionBase:
         rightside = cmd(prog, *args)
         return Pipe(self, rightside)
 
+    def then(self, prog, *args):
+        rightside = cmd(prog, *args)
+        return Then(self, rightside)
+
 
 class Command(ExpressionBase):
     def __init__(self, prog, *args):
@@ -65,7 +69,7 @@ class OperationBase(ExpressionBase):
         self._right = right
 
 
-class And(OperationBase):
+class Then(OperationBase):
     @trollius.coroutine
     def _exec(self, loop, stdin, stdout, stderr):
         # Execute the first expression.
@@ -97,12 +101,7 @@ class Pipe(OperationBase):
         rfuture.add_done_callback(lambda f: os.close(read_pipe))
         rresult = yield From(rfuture)
         lresult = yield From(lfuture)
-        # Return the rightmost error, if any.
-        rightmosterror = rresult.returncode
-        if rightmosterror == 0:
-            rightmosterror = lresult.returncode
-        ret = lresult.merge(rresult)._replace(returncode=rightmosterror)
-        raise Return(ret)
+        raise Return(lresult.merge(rresult))
 
 
 _ResultBase = collections.namedtuple(
@@ -110,10 +109,13 @@ _ResultBase = collections.namedtuple(
 
 
 class Result(_ResultBase):
-    # When merging two results (for example, A && B), take the second return
-    # code and concatenate both the outputs.
+    # When merging two results take the rightmost error code or zero and
+    # concatenate both the outputs.
     def merge(self, second):
-        return Result(second.returncode,
+        returncode = second.returncode
+        if returncode == 0:
+            returncode = self.returncode
+        return Result(returncode,
                       self._concat_or_none(self.stdout, second.stdout),
                       self._concat_or_none(self.stderr, second.stderr))
 
