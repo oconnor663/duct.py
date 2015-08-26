@@ -6,8 +6,8 @@ import trollius
 from trollius import From, Return
 
 
-def cmd(prog, *args):
-    return Command(prog, *args)
+def cmd(*args, **kwargs):
+    return Command(*args, **kwargs)
 
 
 class ExpressionBase:
@@ -53,7 +53,17 @@ class ExpressionBase:
 
 class Command(ExpressionBase):
     def __init__(self, prog, *args):
-        self._tuple = (prog,) + args
+        # If no explicit arguments are provided, split the program string on
+        # whitespace and interpret any separate words as args. This allows the
+        # user to type a command like "cat -vet /dev/urandom" as a single
+        # string instead of typing [","] between each word.
+        # XXX: This makes it impossible to directly invoke a program named
+        # "with space" if there aren't any positional arguments. But...does
+        # that ever happen?
+        if not args:
+            self._tuple = prog.split()
+        else:
+            self._tuple = (prog,) + args
 
     @trollius.coroutine
     def _exec(self, loop, stdin, stdout, stderr):

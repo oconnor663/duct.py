@@ -5,7 +5,7 @@ os.environ['TROLLIUSDEBUG'] = '1'
 
 from tubes import cmd, CheckedError
 
-cmd('echo', 'hello', 'world').run()
+cmd('echo hello world').run()
 
 print('output: "{}"'.format(cmd('echo', 'some     stuff').read()))
 
