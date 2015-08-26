@@ -23,3 +23,10 @@ print('pipe:',
       .pipe('head', '-c', '10')
       .pipe('cat', '-vet')
       .read(check=False))
+
+print('and/or:',
+      cmd('echo', '-n', 'hi')
+      .then('false')
+      .pipe('sed', 's/hi/hee/')
+      .orthen('echo', 'haw')
+      .read())

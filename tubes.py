@@ -41,13 +41,14 @@ class ExpressionBase:
     def read(self, trim=True, **kwargs):
         return self.result(trim=trim, **kwargs).stdout
 
-    def pipe(self, prog, *args):
-        rightside = cmd(prog, *args)
-        return Pipe(self, rightside)
+    def pipe(self, *args, **kwargs):
+        return Pipe(self, cmd(*args, **kwargs))
 
-    def then(self, prog, *args):
-        rightside = cmd(prog, *args)
-        return Then(self, rightside)
+    def then(self, *args, **kwargs):
+        return Then(self, cmd(*args, **kwargs))
+
+    def orthen(self, *args, **kwargs):
+        return OrThen(self, cmd(*args, **kwargs))
 
 
 class Command(ExpressionBase):
@@ -78,6 +79,20 @@ class Then(OperationBase):
         if lresult.returncode != 0:
             raise Return(lresult)
         # Otherwise execute the second expression.
+        rresult = yield From(self._right._exec(loop, stdin, stdout, stderr))
+        raise Return(lresult.merge(rresult))
+
+
+class OrThen(OperationBase):
+    @trollius.coroutine
+    def _exec(self, loop, stdin, stdout, stderr):
+        # Execute the first expression.
+        lresult = yield From(self._left._exec(loop, stdin, stdout, stderr))
+        # If it returns zero short-circuit.
+        if lresult.returncode == 0:
+            raise Return(lresult)
+        # Otherwise suppress the error and execute the second expression.
+        lresult = lresult._replace(returncode=0)
         rresult = yield From(self._right._exec(loop, stdin, stdout, stderr))
         raise Return(lresult.merge(rresult))
 
