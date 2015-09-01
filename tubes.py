@@ -1,13 +1,27 @@
 import atexit
 import collections
 import os
-import subprocess
+# import subprocess
 import trollius
 from trollius import From, Return
 
 
 def cmd(*args, **kwargs):
     return Command(*args, **kwargs)
+
+
+@trollius.coroutine
+def _run_with_stdout_pipe(loop, expr):
+    stdout_r, stdout_w = os.pipe()
+    stdout_reader = trollius.StreamReader()
+    yield From(loop.connect_read_pipe(
+        lambda: trollius.StreamReaderProtocol(stdout_reader),
+        os.fdopen(stdout_r)))
+    stdout_future = loop.create_task(stdout_reader.read())
+    result = yield From(expr._exec(loop, None, stdout_w, None))
+    os.close(stdout_w)
+    stdout_bytes = yield From(stdout_future)
+    raise Return(result._replace(stdout=stdout_bytes))
 
 
 class ExpressionBase:
@@ -21,11 +35,12 @@ class ExpressionBase:
         # I'm doing my best to refactor these nasty details into a separate
         # function.
         def get_task(loop):
-            return self._exec(
-                loop=loop,
-                stdin=None,
-                stdout=subprocess.PIPE if stdout else None,
-                stderr=subprocess.PIPE if stderr else None)
+            return _run_with_stdout_pipe(loop, self)
+            # return self._exec(
+            #     loop=loop,
+            #     stdin=None,
+            #     stdout=subprocess.PIPE if stdout else None,
+            #     stderr=subprocess.PIPE if stderr else None)
         result = _run_async_task(get_task)
         if trim:
             result = result.trim()
