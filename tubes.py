@@ -94,6 +94,9 @@ class CommandBase:
     def orthen(self, *args, **kwargs):
         return OrThen(self, cmd(*args, **kwargs))
 
+    def __repr__(self):
+        raise NotImplementedError
+
 
 class Command(CommandBase):
     def __init__(self, prog, *args):
@@ -117,6 +120,9 @@ class Command(CommandBase):
         status = yield From(p.wait())
         raise Return(status)
 
+    def __repr__(self):
+        return ' '.join(self._tuple)
+
 
 class OperationBase(CommandBase):
     def __init__(self, left, right):
@@ -136,6 +142,9 @@ class Then(OperationBase):
         status = yield From(self._right._exec(loop, stdin, stdout, stderr))
         raise Return(status)
 
+    def __repr__(self):
+        return repr(self._left) + ' && ' + repr(self._right)
+
 
 class OrThen(OperationBase):
     @trollius.coroutine
@@ -148,6 +157,9 @@ class OrThen(OperationBase):
         # Otherwise ignore the error and execute the second command.
         status = yield From(self._right._exec(loop, stdin, stdout, stderr))
         raise Return(status)
+
+    def __repr__(self):
+        return repr(self._left) + ' || ' + repr(self._right)
 
 
 class Pipe(OperationBase):
@@ -171,6 +183,9 @@ class Pipe(OperationBase):
         rstatus = yield From(rfuture)
         # Return the rightmost error, or zero if no errors.
         raise Return(lstatus if rstatus == 0 else rstatus)
+
+    def __repr__(self):
+        return repr(self._left) + ' | ' + repr(self._right)
 
 
 Result = collections.namedtuple('Result', ['returncode', 'stdout', 'stderr'])
