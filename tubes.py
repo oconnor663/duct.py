@@ -1,6 +1,5 @@
 import atexit
 import collections
-import contextlib
 import os
 import trollius
 from trollius import From, Return
@@ -10,57 +9,49 @@ def cmd(*args, **kwargs):
     return Command(*args, **kwargs)
 
 
-def pipe_filelike():
+@trollius.coroutine
+def _async_pipe(loop):
+    # Create the pipe.
     read_fd, write_fd = os.pipe()
-    read_file = os.fdopen(read_fd, 'r')
-    write_file = os.fdopen(write_fd, 'w')
-    return read_file, write_file
-
-
-@trollius.coroutine
-def pipe_context(loop):
-    read_f, write_f = pipe_filelike()
-    reader = trollius.StreamReader()
+    read_pipe = os.fdopen(read_fd, 'r')
+    write_pipe = os.fdopen(write_fd, 'w')
+    # Hook it up to the event loop.
+    stream_reader = trollius.StreamReader()
     yield From(loop.connect_read_pipe(
-        lambda: trollius.StreamReaderProtocol(reader),
-        read_f))
-    read_future = loop.create_task(reader.read())
-
-    @contextlib.contextmanager
-    def manager():
-        with read_f, write_f:
-            yield read_future, write_f
-
-    return manager()
-
-
-@trollius.coroutine
-def noop_context(loop):
-    read_future = trollius.Future(loop=loop)
-    read_future.set_result(None)
-
-    @contextlib.contextmanager
-    def manager():
-        yield read_future, None
-
-    return manager()
+        lambda: trollius.StreamReaderProtocol(stream_reader),
+        read_pipe))
+    # Kick off a reader. If we gave this pipe to a child process without a
+    # running reader, the child could fill up the pipe buffer and hang.
+    read_future = loop.create_task(stream_reader.read())
+    return read_pipe, write_pipe, read_future
 
 
 @trollius.coroutine
 def _run_with_pipes(loop, expr, stdout, stderr):
     # The subprocess module acceps None for stdin/stdout/stderr, to mean leave
     # the default. We use that instead of hardcoding 0/1/2.
-    stdout_context = pipe_context(loop) if stdout else noop_context(loop)
-    stderr_context = pipe_context(loop) if stderr else noop_context(loop)
-    with (yield from stdout_context) as (stdout_future, stdout_w), \
-         (yield from stderr_context) as (stderr_future, stderr_w):
-        expr_result = yield From(expr._exec(loop, None, stdout_w, stderr_w))
-        stdout_w and stdout_w.close()
-        stderr_w and stderr_w.close()
+    stdout_write = None
+    stderr_write = None
+    # Create pipes if needed, and kick off reader coroutines.
+    if stdout:
+        stdout_read, stdout_write, stdout_future = \
+            yield From(_async_pipe(loop))
+    if stderr:
+        stderr_read, stderr_write, stderr_future = \
+            yield From(_async_pipe(loop))
+    # Kick off the child processes.
+    status = yield From(expr._exec(loop, None, stdout_write, stderr_write))
+    stdout_bytes = None
+    stderr_bytes = None
+    if stdout:
+        stdout_write.close()
         stdout_bytes = yield From(stdout_future)
+        stdout_read.close()
+    if stderr:
+        stderr_write.close()
         stderr_bytes = yield From(stderr_future)
-        raise Return(Result(
-            expr_result.returncode, stdout_bytes, stderr_bytes))
+        stderr_read.close()
+    raise Return(status, stdout_bytes, stderr_bytes)
 
 
 class ExpressionBase:
@@ -75,12 +66,16 @@ class ExpressionBase:
         # function.
         def get_task(loop):
             return _run_with_pipes(loop, self, stdout, stderr)
-        result = _run_async_task(get_task)
+        status, stdout_bytes, stderr_bytes = _run_async_task(get_task)
         if trim:
-            result = result.trim()
+            newlines = b'\n\r'
+            stdout_bytes = stdout_bytes and stdout_bytes.rstrip(newlines)
+            stderr_bytes = stderr_bytes and stderr_bytes.rstrip(newlines)
         if not bytes:
-            result = result.decode()
-        if check and result.returncode != 0:
+            stdout_bytes = stdout_bytes and stdout_bytes.decode()
+            stderr_bytes = stderr_bytes and stderr_bytes.decode()
+        result = Result(status, stdout_bytes, stderr_bytes)
+        if check and status != 0:
             raise CheckedError(result, self)
         return result
 
@@ -119,8 +114,8 @@ class Command(ExpressionBase):
         p = yield From(trollius.subprocess.create_subprocess_exec(
             *self._tuple, loop=loop, stdin=stdin, stdout=stdout,
             stderr=stderr))
-        out, err = yield From(p.communicate())
-        raise Return(Result(p.returncode, out, err))
+        status = yield From(p.wait())
+        raise Return(status)
 
 
 class OperationBase(ExpressionBase):
@@ -133,27 +128,26 @@ class Then(OperationBase):
     @trollius.coroutine
     def _exec(self, loop, stdin, stdout, stderr):
         # Execute the first expression.
-        lresult = yield From(self._left._exec(loop, stdin, stdout, stderr))
+        status = yield From(self._left._exec(loop, stdin, stdout, stderr))
         # If it returns non-zero short-circuit.
-        if lresult.returncode != 0:
-            raise Return(lresult)
+        if status != 0:
+            raise Return(status)
         # Otherwise execute the second expression.
-        rresult = yield From(self._right._exec(loop, stdin, stdout, stderr))
-        raise Return(lresult.merge(rresult))
+        status = yield From(self._right._exec(loop, stdin, stdout, stderr))
+        raise Return(status)
 
 
 class OrThen(OperationBase):
     @trollius.coroutine
     def _exec(self, loop, stdin, stdout, stderr):
         # Execute the first expression.
-        lresult = yield From(self._left._exec(loop, stdin, stdout, stderr))
+        status = yield From(self._left._exec(loop, stdin, stdout, stderr))
         # If it returns zero short-circuit.
-        if lresult.returncode == 0:
-            raise Return(lresult)
-        # Otherwise suppress the error and execute the second expression.
-        lresult = lresult._replace(returncode=0)
-        rresult = yield From(self._right._exec(loop, stdin, stdout, stderr))
-        raise Return(lresult.merge(rresult))
+        if status == 0:
+            raise Return(status)
+        # Otherwise ignore the error and execute the second expression.
+        status = yield From(self._right._exec(loop, stdin, stdout, stderr))
+        raise Return(status)
 
 
 class Pipe(OperationBase):
@@ -173,56 +167,13 @@ class Pipe(OperationBase):
         rfuture = loop.create_task(self._right._exec(
             loop, read_pipe, stdout, stderr))
         rfuture.add_done_callback(lambda f: os.close(read_pipe))
-        rresult = yield From(rfuture)
-        lresult = yield From(lfuture)
-        raise Return(lresult.merge(rresult))
+        lstatus = yield From(lfuture)
+        rstatus = yield From(rfuture)
+        # Return the rightmost error, or zero if no errors.
+        raise Return(lstatus if rstatus == 0 else rstatus)
 
 
-_ResultBase = collections.namedtuple(
-    '_ResultBase', ['returncode', 'stdout', 'stderr'])
-
-
-class Result(_ResultBase):
-    # When merging two results take the rightmost error code or zero and
-    # concatenate both the outputs.
-    def merge(self, second):
-        returncode = second.returncode
-        if returncode == 0:
-            returncode = self.returncode
-        return Result(returncode,
-                      self._concat_or_none(self.stdout, second.stdout),
-                      self._concat_or_none(self.stderr, second.stderr))
-
-    @staticmethod
-    def _concat_or_none(out1, out2):
-        if out1 is None:
-            return out2
-        if out2 is None:
-            return out1
-        return out1 + out2
-
-    def trim(self):
-        return Result(self.returncode,
-                      self._trim_or_none(self.stdout),
-                      self._trim_or_none(self.stderr))
-
-    @staticmethod
-    def _trim_or_none(b):
-        if b is None:
-            return None
-        newlines = b'\n\r'
-        return b.rstrip(newlines)
-
-    def decode(self):
-        return Result(self.returncode,
-                      self._decode_or_none(self.stdout),
-                      self._decode_or_none(self.stderr))
-
-    @staticmethod
-    def _decode_or_none(b):
-        if b is None:
-            return None
-        return b.decode()
+Result = collections.namedtuple('Result', ['returncode', 'stdout', 'stderr'])
 
 
 class CheckedError(Exception):
