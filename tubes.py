@@ -27,7 +27,7 @@ def _async_pipe(loop):
 
 
 @trollius.coroutine
-def _run_with_pipes(loop, expr, stdout, stderr):
+def _run_with_pipes(loop, command, stdout, stderr):
     # The subprocess module acceps None for stdin/stdout/stderr, to mean leave
     # the default. We use that instead of hardcoding 0/1/2.
     stdout_write = None
@@ -40,7 +40,7 @@ def _run_with_pipes(loop, expr, stdout, stderr):
         stderr_read, stderr_write, stderr_future = \
             yield From(_async_pipe(loop))
     # Kick off the child processes.
-    status = yield From(expr._exec(loop, None, stdout_write, stderr_write))
+    status = yield From(command._exec(loop, None, stdout_write, stderr_write))
     stdout_bytes = None
     stderr_bytes = None
     if stdout:
@@ -54,7 +54,7 @@ def _run_with_pipes(loop, expr, stdout, stderr):
     raise Return(status, stdout_bytes, stderr_bytes)
 
 
-class ExpressionBase:
+class CommandBase:
     @trollius.coroutine
     def _exec(self, loop, stdin, stdout, stderr):
         raise NotImplementedError
@@ -95,7 +95,7 @@ class ExpressionBase:
         return OrThen(self, cmd(*args, **kwargs))
 
 
-class Command(ExpressionBase):
+class Command(CommandBase):
     def __init__(self, prog, *args):
         # If no explicit arguments are provided, split the program string on
         # whitespace and interpret any separate words as args. This allows the
@@ -118,7 +118,7 @@ class Command(ExpressionBase):
         raise Return(status)
 
 
-class OperationBase(ExpressionBase):
+class OperationBase(CommandBase):
     def __init__(self, left, right):
         self._left = left
         self._right = right
@@ -127,12 +127,12 @@ class OperationBase(ExpressionBase):
 class Then(OperationBase):
     @trollius.coroutine
     def _exec(self, loop, stdin, stdout, stderr):
-        # Execute the first expression.
+        # Execute the first command.
         status = yield From(self._left._exec(loop, stdin, stdout, stderr))
         # If it returns non-zero short-circuit.
         if status != 0:
             raise Return(status)
-        # Otherwise execute the second expression.
+        # Otherwise execute the second command.
         status = yield From(self._right._exec(loop, stdin, stdout, stderr))
         raise Return(status)
 
@@ -140,12 +140,12 @@ class Then(OperationBase):
 class OrThen(OperationBase):
     @trollius.coroutine
     def _exec(self, loop, stdin, stdout, stderr):
-        # Execute the first expression.
+        # Execute the first command.
         status = yield From(self._left._exec(loop, stdin, stdout, stderr))
         # If it returns zero short-circuit.
         if status == 0:
             raise Return(status)
-        # Otherwise ignore the error and execute the second expression.
+        # Otherwise ignore the error and execute the second command.
         status = yield From(self._right._exec(loop, stdin, stdout, stderr))
         raise Return(status)
 
@@ -155,9 +155,9 @@ class Pipe(OperationBase):
     def _exec(self, loop, stdin, stdout, stderr):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
-        # side could be a compound expression (like A && B), so we have to wait
-        # until each expression is completely finished before we can close its
-        # end of the pipe. Closing the write end allows the right side to
+        # side could be a compound expression (like A.then(B)), so we have to
+        # wait until each command is completely finished before we can close
+        # its end of the pipe. Closing the write end allows the right side to
         # receive EOF, and closing the read end allows the left side to receive
         # SIGPIPE.
         read_pipe, write_pipe = os.pipe()
@@ -177,13 +177,13 @@ Result = collections.namedtuple('Result', ['returncode', 'stdout', 'stderr'])
 
 
 class CheckedError(Exception):
-    def __init__(self, result, expression):
+    def __init__(self, result, command):
         self.result = result
-        self.expression = expression
+        self.command = command
 
     def __str__(self):
         return 'Command "{}" returned non-zero exit status {}'.format(
-            self.expression, self.result.returncode)
+            self.command, self.result.returncode)
 
 
 # It's completely unclear to me how to run our coroutines without disrupting
