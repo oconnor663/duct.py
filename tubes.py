@@ -1,7 +1,7 @@
 import atexit
 import collections
+import contextlib
 import os
-# import subprocess
 import trollius
 from trollius import From, Return
 
@@ -10,42 +10,57 @@ def cmd(*args, **kwargs):
     return Command(*args, **kwargs)
 
 
+def pipe_filelike():
+    read_fd, write_fd = os.pipe()
+    read_file = os.fdopen(read_fd, 'r')
+    write_file = os.fdopen(write_fd, 'w')
+    return read_file, write_file
+
+
 @trollius.coroutine
-def _run_with_pipes(loop, expr, capture_stdout, capture_stderr):
+def pipe_context(loop):
+    read_f, write_f = pipe_filelike()
+    reader = trollius.StreamReader()
+    yield From(loop.connect_read_pipe(
+        lambda: trollius.StreamReaderProtocol(reader),
+        read_f))
+    read_future = loop.create_task(reader.read())
+
+    @contextlib.contextmanager
+    def manager():
+        with read_f, write_f:
+            yield read_future, write_f
+
+    return manager()
+
+
+@trollius.coroutine
+def noop_context(loop):
+    read_future = trollius.Future(loop=loop)
+    read_future.set_result(None)
+
+    @contextlib.contextmanager
+    def manager():
+        yield read_future, None
+
+    return manager()
+
+
+@trollius.coroutine
+def _run_with_pipes(loop, expr, stdout, stderr):
     # The subprocess module acceps None for stdin/stdout/stderr, to mean leave
     # the default. We use that instead of hardcoding 0/1/2.
-    stdout_w = None
-    stderr_w = None
-    stdout_bytes = None
-    stderr_bytes = None
-
-    if capture_stdout:
-        stdout_r, stdout_w = os.pipe()
-        stdout_reader = trollius.StreamReader()
-        yield From(loop.connect_read_pipe(
-            lambda: trollius.StreamReaderProtocol(stdout_reader),
-            os.fdopen(stdout_r)))
-        stdout_future = loop.create_task(stdout_reader.read())
-    if capture_stderr:
-        stderr_r, stderr_w = os.pipe()
-        stderr_reader = trollius.StreamReader()
-        yield From(loop.connect_read_pipe(
-            lambda: trollius.StreamReaderProtocol(stderr_reader),
-            os.fdopen(stderr_r)))
-        stderr_future = loop.create_task(stderr_reader.read())
-
-    expr_result = yield From(expr._exec(loop, None, stdout_w, stderr_w))
-
-    if capture_stdout:
-        os.close(stdout_w)
+    stdout_context = pipe_context(loop) if stdout else noop_context(loop)
+    stderr_context = pipe_context(loop) if stderr else noop_context(loop)
+    with (yield from stdout_context) as (stdout_future, stdout_w), \
+         (yield from stderr_context) as (stderr_future, stderr_w):
+        expr_result = yield From(expr._exec(loop, None, stdout_w, stderr_w))
+        stdout_w and stdout_w.close()
+        stderr_w and stderr_w.close()
         stdout_bytes = yield From(stdout_future)
-        # stdout_r is already closed here. Why?
-    if capture_stderr:
-        os.close(stderr_w)
         stderr_bytes = yield From(stderr_future)
-        # Ditto.
-
-    raise Return(Result(expr_result.returncode, stdout_bytes, stderr_bytes))
+        raise Return(Result(
+            expr_result.returncode, stdout_bytes, stderr_bytes))
 
 
 class ExpressionBase:
