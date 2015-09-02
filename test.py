@@ -14,7 +14,7 @@ print('result:', cmd('echo', 'more stuff').result(stderr=True))
 print('random:', cmd('head', '-c', '10', '/dev/urandom').read(bytes=True))
 
 try:
-    cmd('false').run()
+    cmd('bash', '-c', 'exit 42').run()
 except CheckedError as e:
     print('error:', e)
 

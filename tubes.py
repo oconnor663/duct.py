@@ -9,12 +9,73 @@ def cmd(*args, **kwargs):
     return Command(*args, **kwargs)
 
 
+def _run_and_get_result(command, capture_stdout, capture_stderr, trim_mode,
+                        bytes_mode, check_errors):
+    # It's very unclear to me how to use the event loop properly for this. I'm
+    # doing my best to refactor these nasty details into a separate function.
+    def get_task(loop):
+        return _run_with_pipes(loop, command, capture_stdout, capture_stderr)
+    status, stdout_bytes, stderr_bytes = _run_async_task(get_task)
+    if trim_mode:
+        stdout_bytes = _trim_bytes_or_none(stdout_bytes)
+        stderr_bytes = _trim_bytes_or_none(stderr_bytes)
+    if not bytes_mode:
+        stdout_bytes = _decode_bytes_or_none(stdout_bytes)
+        stderr_bytes = _decode_bytes_or_none(stderr_bytes)
+    result = Result(status, stdout_bytes, stderr_bytes)
+    if check_errors and status != 0:
+        raise CheckedError(result, command)
+    return result
+
+
+# It's completely unclear to me how to run our coroutines without disrupting
+# asyncio callers outside this library. This funciton is the best I've got so
+# far. Further questions:
+#   https://redd.it/3id0fb
+#   https://gist.github.com/oconnor663/f0ddad2c0bd1f7cf14c2
+#   http://stackoverflow.com/q/32345735/823869
+def _run_async_task(get_task):
+    loop = trollius.get_event_loop()
+    atexit.register(loop.close)
+    task = get_task(loop)
+    result = loop.run_until_complete(task)
+    return result
+
+
 @trollius.coroutine
-def _async_pipe(loop):
+def _run_with_pipes(loop, command, capture_stdout, capture_stderr):
+    # The subprocess module acceps None for stdin/stdout/stderr, to mean leave
+    # the default. We use that instead of hardcoding 0/1/2.
+    stdout_write = None
+    stderr_write = None
+    # Create pipes if needed, and kick off reader coroutines.
+    if capture_stdout:
+        stdout_read, stdout_write, stdout_future = \
+            yield From(_create_async_pipe(loop))
+    if capture_stderr:
+        stderr_read, stderr_write, stderr_future = \
+            yield From(_create_async_pipe(loop))
+    # Kick off the child processes.
+    status = yield From(command._exec(loop, None, stdout_write, stderr_write))
+    stdout_bytes = None
+    stderr_bytes = None
+    if capture_stdout:
+        stdout_write.close()
+        stdout_bytes = yield From(stdout_future)
+        stdout_read.close()
+    if capture_stderr:
+        stderr_write.close()
+        stderr_bytes = yield From(stderr_future)
+        stderr_read.close()
+    raise Return(status, stdout_bytes, stderr_bytes)
+
+
+@trollius.coroutine
+def _create_async_pipe(loop):
     # Create the pipe.
     read_fd, write_fd = os.pipe()
-    read_pipe = os.fdopen(read_fd, 'r')
-    write_pipe = os.fdopen(write_fd, 'w')
+    read_pipe = os.fdopen(read_fd, 'rb')
+    write_pipe = os.fdopen(write_fd, 'wb')
     # Hook it up to the event loop.
     stream_reader = trollius.StreamReader()
     yield From(loop.connect_read_pipe(
@@ -26,34 +87,6 @@ def _async_pipe(loop):
     return read_pipe, write_pipe, read_future
 
 
-@trollius.coroutine
-def _run_with_pipes(loop, command, stdout, stderr):
-    # The subprocess module acceps None for stdin/stdout/stderr, to mean leave
-    # the default. We use that instead of hardcoding 0/1/2.
-    stdout_write = None
-    stderr_write = None
-    # Create pipes if needed, and kick off reader coroutines.
-    if stdout:
-        stdout_read, stdout_write, stdout_future = \
-            yield From(_async_pipe(loop))
-    if stderr:
-        stderr_read, stderr_write, stderr_future = \
-            yield From(_async_pipe(loop))
-    # Kick off the child processes.
-    status = yield From(command._exec(loop, None, stdout_write, stderr_write))
-    stdout_bytes = None
-    stderr_bytes = None
-    if stdout:
-        stdout_write.close()
-        stdout_bytes = yield From(stdout_future)
-        stdout_read.close()
-    if stderr:
-        stderr_write.close()
-        stderr_bytes = yield From(stderr_future)
-        stderr_read.close()
-    raise Return(status, stdout_bytes, stderr_bytes)
-
-
 class CommandBase:
     @trollius.coroutine
     def _exec(self, loop, stdin, stdout, stderr):
@@ -61,23 +94,11 @@ class CommandBase:
 
     def result(self, check=True, trim=False, bytes=False, stdout=True,
                stderr=False):
-        # It's very unclear to me how to use the event loop properly for this.
-        # I'm doing my best to refactor these nasty details into a separate
-        # function.
-        def get_task(loop):
-            return _run_with_pipes(loop, self, stdout, stderr)
-        status, stdout_bytes, stderr_bytes = _run_async_task(get_task)
-        if trim:
-            newlines = b'\n\r'
-            stdout_bytes = stdout_bytes and stdout_bytes.rstrip(newlines)
-            stderr_bytes = stderr_bytes and stderr_bytes.rstrip(newlines)
-        if not bytes:
-            stdout_bytes = stdout_bytes and stdout_bytes.decode()
-            stderr_bytes = stderr_bytes and stderr_bytes.decode()
-        result = Result(status, stdout_bytes, stderr_bytes)
-        if check and status != 0:
-            raise CheckedError(result, self)
-        return result
+        # Flags in the public API are given short names for convenience, but we
+        # give them into more descriptive names internally.
+        return _run_and_get_result(
+            self, capture_stdout=stdout, capture_stderr=stderr, trim_mode=trim,
+            bytes_mode=bytes, check_errors=check)
 
     def run(self, stdout=False, **kwargs):
         return self.result(stdout=stdout, **kwargs)
@@ -201,14 +222,10 @@ class CheckedError(Exception):
             self.command, self.result.returncode)
 
 
-# It's completely unclear to me how to run our coroutines without disrupting
-# asyncio callers outside this library. This funciton is the best I've got so
-# far. Further questions:
-#   https://redd.it/3id0fb
-#   https://gist.github.com/oconnor663/f0ddad2c0bd1f7cf14c2
-def _run_async_task(get_task):
-    loop = trollius.get_event_loop()
-    atexit.register(loop.close)
-    task = get_task(loop)
-    result = loop.run_until_complete(task)
-    return result
+def _trim_bytes_or_none(b):
+    newlines = b'\n\r'
+    return None if b is None else b.rstrip(newlines)
+
+
+def _decode_bytes_or_none(b):
+    return None if b is None else b.decode()
