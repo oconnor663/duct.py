@@ -11,17 +11,41 @@ def cmd(*args, **kwargs):
 
 
 @trollius.coroutine
-def _run_with_stdout_pipe(loop, expr):
-    stdout_r, stdout_w = os.pipe()
-    stdout_reader = trollius.StreamReader()
-    yield From(loop.connect_read_pipe(
-        lambda: trollius.StreamReaderProtocol(stdout_reader),
-        os.fdopen(stdout_r)))
-    stdout_future = loop.create_task(stdout_reader.read())
-    result = yield From(expr._exec(loop, None, stdout_w, None))
-    os.close(stdout_w)
-    stdout_bytes = yield From(stdout_future)
-    raise Return(result._replace(stdout=stdout_bytes))
+def _run_with_pipes(loop, expr, capture_stdout, capture_stderr):
+    # The subprocess module acceps None for stdin/stdout/stderr, to mean leave
+    # the default. We use that instead of hardcoding 0/1/2.
+    stdout_w = None
+    stderr_w = None
+    stdout_bytes = None
+    stderr_bytes = None
+
+    if capture_stdout:
+        stdout_r, stdout_w = os.pipe()
+        stdout_reader = trollius.StreamReader()
+        yield From(loop.connect_read_pipe(
+            lambda: trollius.StreamReaderProtocol(stdout_reader),
+            os.fdopen(stdout_r)))
+        stdout_future = loop.create_task(stdout_reader.read())
+    if capture_stderr:
+        stderr_r, stderr_w = os.pipe()
+        stderr_reader = trollius.StreamReader()
+        yield From(loop.connect_read_pipe(
+            lambda: trollius.StreamReaderProtocol(stderr_reader),
+            os.fdopen(stderr_r)))
+        stderr_future = loop.create_task(stderr_reader.read())
+
+    expr_result = yield From(expr._exec(loop, None, stdout_w, stderr_w))
+
+    if capture_stdout:
+        os.close(stdout_w)
+        stdout_bytes = yield From(stdout_future)
+        # stdout_r is already closed here. Why?
+    if capture_stderr:
+        os.close(stderr_w)
+        stderr_bytes = yield From(stderr_future)
+        # Ditto.
+
+    raise Return(Result(expr_result.returncode, stdout_bytes, stderr_bytes))
 
 
 class ExpressionBase:
@@ -35,12 +59,7 @@ class ExpressionBase:
         # I'm doing my best to refactor these nasty details into a separate
         # function.
         def get_task(loop):
-            return _run_with_stdout_pipe(loop, self)
-            # return self._exec(
-            #     loop=loop,
-            #     stdin=None,
-            #     stdout=subprocess.PIPE if stdout else None,
-            #     stderr=subprocess.PIPE if stderr else None)
+            return _run_with_pipes(loop, self, stdout, stderr)
         result = _run_async_task(get_task)
         if trim:
             result = result.trim()
