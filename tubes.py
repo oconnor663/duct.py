@@ -235,7 +235,5 @@ class ThreadWithReturn(threading.Thread):
     def join(self):
         super().join()
         if self._exception is not None:
-            # TODO: Make this python2-compatible.
-            raise RuntimeError("exception in thread", self._exception) \
-                from self._exception
+            raise self._exception
         return self._return
