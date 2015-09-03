@@ -206,7 +206,7 @@ class CheckedError(Exception):
         self.command = command
 
     def __str__(self):
-        return 'Command "{}" returned non-zero exit status {}'.format(
+        return 'Command "{}" returned non-zero exit status {}.'.format(
             self.command, self.result.returncode)
 
 
