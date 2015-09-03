@@ -30,3 +30,9 @@ print('and/or:',
       .pipe('sed', 's/hi/hee/')
       .orthen('echo', 'haw')
       .read())
+
+print('nesting:',
+      cmd('echo moomoo')
+      .pipe(cmd('head -c 3').pipe('sed s/o/a/g')
+            .then('sed s/o/e/g'))
+      .read())

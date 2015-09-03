@@ -56,6 +56,19 @@ def _run_with_pipes(command, capture_stdout, capture_stderr, binary_mode):
         return Result(status, stdout_bytes, stderr_bytes)
 
 
+def _new_or_existing_command(first, *rest, **kwargs):
+    # If the arguments are strings, parse them the normal way.
+    if isinstance(first, str):
+        return Command(first, *rest, **kwargs)
+    # Otherwise, the arguments must be a single command object.
+    if not isinstance(first, CommandBase):
+        raise TypeError("First argument must be a string or a command object.")
+    if rest or kwargs:
+        raise TypeError("When a command object is given, "
+                        "no other arguments are allowed.")
+    return first
+
+
 class CommandBase:
     def _exec(self, stdin, stdout, stderr):
         raise NotImplementedError
@@ -75,13 +88,13 @@ class CommandBase:
         return self.result(trim=trim, **kwargs).stdout
 
     def pipe(self, *args, **kwargs):
-        return Pipe(self, cmd(*args, **kwargs))
+        return Pipe(self, _new_or_existing_command(*args, **kwargs))
 
     def then(self, *args, **kwargs):
-        return Then(self, cmd(*args, **kwargs))
+        return Then(self, _new_or_existing_command(*args, **kwargs))
 
     def orthen(self, *args, **kwargs):
-        return OrThen(self, cmd(*args, **kwargs))
+        return OrThen(self, _new_or_existing_command(*args, **kwargs))
 
     def __repr__(self):
         raise NotImplementedError
