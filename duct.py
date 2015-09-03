@@ -219,7 +219,7 @@ def context_manager_giving_none():
 
 class ThreadWithReturn(threading.Thread):
     def __init__(self, target, args=(), kwargs={}, **thread_kwargs):
-        super().__init__(**thread_kwargs)
+        threading.Thread.__init__(self, **thread_kwargs)
         self._target = target
         self._args = args
         self._kwargs = kwargs
@@ -233,7 +233,7 @@ class ThreadWithReturn(threading.Thread):
             self._exception = e
 
     def join(self):
-        super().join()
+        threading.Thread.join(self)
         if self._exception is not None:
             raise self._exception
         return self._return
