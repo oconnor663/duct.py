@@ -3,7 +3,7 @@
 import os
 os.environ['TROLLIUSDEBUG'] = '1'
 
-from tubes import cmd, CheckedError
+from duct import cmd, CheckedError
 
 cmd('echo hello world').run()
 
