@@ -202,10 +202,6 @@ def _trim_or_none(x):
     return None if x is None else x.rstrip(newlines)
 
 
-def _decode_bytes_or_none(b):
-    return None if b is None else b.decode()
-
-
 def _open_pipe(binary_mode):
     read_fd, write_fd = os.pipe()
     read_mode, write_mode = ('rb', 'wb') if binary_mode else ('r', 'w')
