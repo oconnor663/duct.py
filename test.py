@@ -1,8 +1,5 @@
 #! /usr/bin/env python
 
-import os
-os.environ['TROLLIUSDEBUG'] = '1'
-
 from duct import cmd, cd, setenv, CheckedError
 
 cmd('echo hello world').run()
