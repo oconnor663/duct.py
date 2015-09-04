@@ -240,9 +240,9 @@ class Pipe(OperationBase):
         # Return the rightmost error, if any. Note that cwd and env changes
         # never propagate out of the pipe. This is the same behavior as bash.
         if right_exit.status != 0:
-            return CommandExit(right_exit.status, None, None)
+            return CommandExit(right_exit.status, cwd, env)
         else:
-            return CommandExit(left_exit.status, None, None)
+            return CommandExit(left_exit.status, cwd, env)
 
     def __repr__(self):
         return repr(self._left) + ' | ' + repr(self._right)
