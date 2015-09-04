@@ -10,10 +10,10 @@ cmd('echo hello world').run()
 out = cmd('echo', 'some     stuff').read()
 print('output: "{}"'.format(out))
 
-out = cmd('echo', 'more stuff').result(stderr=True)
+out = cmd('echo more stuff').result(stderr=True)
 print('result:', out)
 
-out = cmd('head', '-c', '10', '/dev/urandom').read(bytes=True)
+out = cmd('head -c 10 /dev/urandom').read(bytes=True)
 print('random:', out)
 
 try:
@@ -21,16 +21,16 @@ try:
 except CheckedError as e:
     print('error:', e)
 
-out = (cmd('cat', '/dev/zero')
-       .pipe('head', '-c', '10')
-       .pipe('cat', '-vet')
+out = (cmd('cat /dev/zero')
+       .pipe('head -c 10')
+       .pipe('cat -vet')
        .read(check=False))
 print('pipe:', out)
 
-out = (cmd('echo', '-n', 'hi')
+out = (cmd('echo -n hi')
        .then('false')
-       .pipe('sed', 's/hi/hee/')
-       .orthen('echo', 'haw')
+       .pipe('sed s/hi/hee/')
+       .orthen('echo haw')
        .read())
 print('and/or:', out)
 
