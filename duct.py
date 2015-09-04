@@ -9,6 +9,14 @@ def cmd(*args, **kwargs):
     return Command(*args, **kwargs)
 
 
+def cd(*args, **kwargs):
+    return Cd(*args, **kwargs)
+
+
+def setenv(*args, **kwargs):
+    return SetEnv(*args, **kwargs)
+
+
 def _run_and_get_result(command, capture_stdout, capture_stderr, trim_mode,
                         binary_mode, check_errors):
     status, output, err_output = _run_with_pipes(
@@ -129,6 +137,32 @@ class Command(CommandBase):
 
     def __repr__(self):
         return ' '.join(self._tuple)
+
+
+class Cd(CommandBase):
+    def __init__(self, path):
+        # Stringifying the path lets us support pathlib.Path's here.
+        self._path = str(path)
+
+    def _exec(self, stdin, stdout, stderr, cwd, env):
+        # Check that the path is legit.
+        if not os.path.isdir(self._path):
+            raise ValueError(
+                '"{}" is not a valid directory.'.format(self._path))
+        # Return it so that subsequent commands will use it as the cwd.
+        return CommandExit(0, self._path, env)
+
+
+class SetEnv(CommandBase):
+    def __init__(self, name, val):
+        self._name = name
+        self._val = val
+
+    def _exec(self, stdin, stdout, stderr, cwd, env):
+        # TODO: Support deletions and dictionary arguments.
+        new_env = env.copy() if env is not None else {}
+        new_env[self._name] = self._val
+        return CommandExit(0, cwd, new_env)
 
 
 class OperationBase(CommandBase):

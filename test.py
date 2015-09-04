@@ -3,7 +3,7 @@
 import os
 os.environ['TROLLIUSDEBUG'] = '1'
 
-from duct import cmd, CheckedError
+from duct import cmd, cd, setenv, CheckedError
 
 cmd('echo hello world').run()
 
@@ -36,3 +36,9 @@ print('nesting:',
       .pipe(cmd('head -c 3').pipe('sed s/o/a/g')
             .then('sed s/o/e/g'))
       .read())
+
+out = cd('/tmp').then('pwd').read()
+print('cd:', out)
+
+out = setenv('MYVAR', 'foo').then('bash', '-c', 'echo "MYVAR=$MYVAR"').read()
+print('setenv:', out)
