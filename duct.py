@@ -11,12 +11,12 @@ def cmd(*args, **kwargs):
 
 def _run_and_get_result(command, capture_stdout, capture_stderr, trim_mode,
                         binary_mode, check_errors):
-    status, stdout, stderr = _run_with_pipes(
+    status, output, err_output = _run_with_pipes(
         command, capture_stdout, capture_stderr, binary_mode)
     if trim_mode:
-        stdout = _trim_or_none(stdout)
-        stderr = _trim_or_none(stderr)
-    result = Result(status, stdout, stderr)
+        output = _trim_or_none(output)
+        err_output = _trim_or_none(err_output)
+    result = Result(status, output, err_output)
     if check_errors and status != 0:
         raise CheckedError(result, command)
     return result
@@ -197,7 +197,8 @@ class Pipe(OperationBase):
         return repr(self._left) + ' | ' + repr(self._right)
 
 
-Result = collections.namedtuple('Result', ['returncode', 'stdout', 'stderr'])
+Result = collections.namedtuple(
+    'Result', ['status', 'stdout', 'stderr'])
 
 
 class CheckedError(Exception):
@@ -207,7 +208,7 @@ class CheckedError(Exception):
 
     def __str__(self):
         return 'Command "{}" returned non-zero exit status {}.'.format(
-            self.command, self.result.returncode)
+            self.command, self.result.status)
 
 
 def _trim_or_none(x):
