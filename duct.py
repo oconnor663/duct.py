@@ -152,6 +152,9 @@ class Cd(CommandBase):
         # Return it so that subsequent commands will use it as the cwd.
         return CommandExit(0, self._path, env)
 
+    def __repr__(self):
+        return 'cd ' + self._path
+
 
 class SetEnv(CommandBase):
     def __init__(self, name, val):
@@ -163,6 +166,9 @@ class SetEnv(CommandBase):
         new_env = env.copy() if env is not None else {}
         new_env[self._name] = self._val
         return CommandExit(0, cwd, new_env)
+
+    def __repr__(self):
+        return 'setenv {} {}'.format(self._name, self._val)
 
 
 class OperationBase(CommandBase):
