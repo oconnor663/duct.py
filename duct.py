@@ -38,9 +38,9 @@ def _run_with_pipes(command, capture_stdout, capture_stderr, binary_mode):
         stderr_read, stderr_write = _open_pipe(binary_mode)
         stderr_thread = ThreadWithReturn(stderr_read.read)
         stderr_thread.start()
-    # Kick off the child processes.
     with stdout_write as stdout, stderr_write as stderr:
-        status = command._exec(None, stdout, stderr)
+        # Kick off the child processes. We discard the cwd and env values.
+        status, _, _ = command._exec(None, stdout, stderr, None, None)
         stdout_bytes = None
         stderr_bytes = None
         if capture_stdout:
@@ -70,7 +70,7 @@ def _new_or_existing_command(first, *rest, **kwargs):
 
 
 class CommandBase:
-    def _exec(self, stdin, stdout, stderr):
+    def _exec(self, stdin, stdout, stderr, cwd, env):
         raise NotImplementedError
 
     def result(self, check=True, trim=False, bytes=False, stdout=True,
@@ -114,10 +114,18 @@ class Command(CommandBase):
         else:
             self._tuple = (prog,) + args
 
-    def _exec(self, stdin, stdout, stderr):
+    def _exec(self, stdin, stdout, stderr, cwd, env):
+        full_env = None
+        # The env parameter only contains additional env vars. We need to copy
+        # the entire working environment first if we're going to pass it in.
+        if env is not None:
+            full_env = os.environ.copy()
+            full_env.update(env)
         status = subprocess.call(
-            self._tuple, stdin=stdin, stdout=stdout, stderr=stderr)
-        return status
+            self._tuple, stdin=stdin, stdout=stdout, stderr=stderr, cwd=cwd,
+            env=full_env)
+        # A normal command never changes cwd or env.
+        return CommandExit(status, cwd, env)
 
     def __repr__(self):
         return ' '.join(self._tuple)
@@ -130,30 +138,32 @@ class OperationBase(CommandBase):
 
 
 class Then(OperationBase):
-    def _exec(self, stdin, stdout, stderr):
+    def _exec(self, stdin, stdout, stderr, cwd, env):
         # Execute the first command.
-        status = self._left._exec(stdin, stdout, stderr)
+        left_exit = self._left._exec(stdin, stdout, stderr, cwd, env)
         # If it returns non-zero short-circuit.
-        if status != 0:
-            return status
+        if left_exit.status != 0:
+            return left_exit
         # Otherwise execute the second command.
-        status = self._right._exec(stdin, stdout, stderr)
-        return status
+        right_exit = self._right._exec(
+            stdin, stdout, stderr, left_exit.cwd, left_exit.env)
+        return right_exit
 
     def __repr__(self):
         return repr(self._left) + ' && ' + repr(self._right)
 
 
 class OrThen(OperationBase):
-    def _exec(self, stdin, stdout, stderr):
+    def _exec(self, stdin, stdout, stderr, cwd, env):
         # Execute the first command.
-        status = self._left._exec(stdin, stdout, stderr)
+        left_exit = self._left._exec(stdin, stdout, stderr, cwd, env)
         # If it returns zero short-circuit.
-        if status == 0:
-            return status
+        if left_exit.status == 0:
+            return left_exit
         # Otherwise ignore the error and execute the second command.
-        status = self._right._exec(stdin, stdout, stderr)
-        return status
+        right_exit = self._right._exec(
+            stdin, stdout, stderr, left_exit.cwd, left_exit.env)
+        return right_exit
 
     def __repr__(self):
         return repr(self._left) + ' || ' + repr(self._right)
@@ -167,7 +177,7 @@ class OrThen(OperationBase):
 # those can conflict with other listeners that might by in the same process,
 # and they won't work on Windows anyway.
 class Pipe(OperationBase):
-    def _exec(self, stdin, stdout, stderr):
+    def _exec(self, stdin, stdout, stderr, cwd, env):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
         # side could be a compound expression (like A.then(B)), so we have to
@@ -179,26 +189,28 @@ class Pipe(OperationBase):
 
         def do_left():
             with write_pipe:
-                return self._left._exec(stdin, write_pipe, stderr)
+                return self._left._exec(stdin, write_pipe, stderr, cwd, env)
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
         with read_pipe:
-            right_status = self._right._exec(read_pipe, stdout, stderr)
-        left_status = left_thread.join()
+            right_exit = self._right._exec(read_pipe, stdout, stderr, cwd, env)
+        left_exit = left_thread.join()
 
-        # Return the rightmost error, if any.
-        if right_status != 0:
-            return right_status
+        # Return the rightmost error, if any. Note that cwd and env changes
+        # never propagate out of the pipe. This is the same behavior as bash.
+        if right_exit.status != 0:
+            return CommandExit(right_exit.status, None, None)
         else:
-            return left_status
+            return CommandExit(left_exit.status, None, None)
 
     def __repr__(self):
         return repr(self._left) + ' | ' + repr(self._right)
 
 
-Result = collections.namedtuple(
-    'Result', ['status', 'stdout', 'stderr'])
+CommandExit = collections.namedtuple('CommandExit', ['status', 'cwd', 'env'])
+
+Result = collections.namedtuple('Result', ['status', 'stdout', 'stderr'])
 
 
 class CheckedError(Exception):
