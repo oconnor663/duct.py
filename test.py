@@ -7,10 +7,10 @@ cmd('echo hello world').run()
 out = cmd('echo', 'some     stuff').read()
 print('output: "{}"'.format(out))
 
-out = cmd('echo more stuff').result(stderr=True)
+out = cmd('echo more stuff').result(stderr=str)
 print('result:', out)
 
-out = cmd('head -c 10 /dev/urandom').read(bytes=True)
+out = cmd('head -c 10 /dev/urandom').read(stdout=bytes)
 print('random:', out)
 
 try:

@@ -17,20 +17,24 @@ def setenv(*args, **kwargs):
     return SetEnv(*args, **kwargs)
 
 
-def _run_and_get_result(command, capture_stdout, capture_stderr, trim_mode,
-                        binary_mode, check_errors):
+def _run_and_get_result(command, stdout, stderr, trim, check):
+    capture_stdout = stdout is str or stdout is bytes
+    stdout_bytes = stdout is bytes
+    capture_stderr = stderr is str or stderr is bytes
+    stderr_bytes = stderr is bytes
     status, output, err_output = _run_with_pipes(
-        command, capture_stdout, capture_stderr, binary_mode)
-    if trim_mode:
+        command, capture_stdout, stdout_bytes, capture_stderr, stderr_bytes)
+    if trim:
         output = _trim_or_none(output)
         err_output = _trim_or_none(err_output)
     result = Result(status, output, err_output)
-    if check_errors and status != 0:
+    if check and status != 0:
         raise CheckedError(result, command)
     return result
 
 
-def _run_with_pipes(command, capture_stdout, capture_stderr, binary_mode):
+def _run_with_pipes(command, capture_stdout, stdout_binary, capture_stderr,
+                    stderr_binary):
     # The subprocess module acceps None for stdin/stdout/stderr, to mean "leave
     # the default". We use that instead of hardcoding 0/1/2.
     stdout_write = context_manager_giving_none()
@@ -39,11 +43,11 @@ def _run_with_pipes(command, capture_stdout, capture_stderr, binary_mode):
     # the child process without reader threads, it could fill up its pipe
     # buffers and hang.
     if capture_stdout:
-        stdout_read, stdout_write = _open_pipe(binary_mode)
+        stdout_read, stdout_write = _open_pipe(stdout_binary)
         stdout_thread = ThreadWithReturn(stdout_read.read)
         stdout_thread.start()
     if capture_stderr:
-        stderr_read, stderr_write = _open_pipe(binary_mode)
+        stderr_read, stderr_write = _open_pipe(stderr_binary)
         stderr_thread = ThreadWithReturn(stderr_read.read)
         stderr_thread.start()
     with stdout_write as stdout, stderr_write as stderr:
@@ -81,15 +85,10 @@ class CommandBase:
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         raise NotImplementedError
 
-    def result(self, check=True, trim=False, bytes=False, stdout=True,
-               stderr=False):
-        # Flags in the public API are given short names for convenience, but we
-        # give them into more descriptive names internally.
-        return _run_and_get_result(
-            self, capture_stdout=stdout, capture_stderr=stderr, trim_mode=trim,
-            binary_mode=bytes, check_errors=check)
+    def result(self, check=True, trim=False, stdout=str, stderr=None):
+        return _run_and_get_result(self, stdout, stderr, trim, check)
 
-    def run(self, stdout=False, **kwargs):
+    def run(self, stdout=None, **kwargs):
         return self.result(stdout=stdout, **kwargs)
 
     def read(self, trim=True, **kwargs):
