@@ -78,7 +78,7 @@ def _new_or_existing_command(first, *rest, **kwargs):
 
 
 class CommandBase:
-    def _exec(self, stdin, stdout, stderr, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         raise NotImplementedError
 
     def result(self, check=True, trim=False, bytes=False, stdout=True,
@@ -122,7 +122,7 @@ class Command(CommandBase):
         else:
             self._tuple = (prog,) + args
 
-    def _exec(self, stdin, stdout, stderr, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         full_env = None
         # The env parameter only contains additional env vars. We need to copy
         # the entire working environment first if we're going to pass it in.
@@ -130,8 +130,8 @@ class Command(CommandBase):
             full_env = os.environ.copy()
             full_env.update(env)
         status = subprocess.call(
-            self._tuple, stdin=stdin, stdout=stdout, stderr=stderr, cwd=cwd,
-            env=full_env)
+            self._tuple, stdin=stdin_pipe, stdout=stdout_pipe,
+            stderr=stderr_pipe, cwd=cwd, env=full_env)
         # A normal command never changes cwd or env.
         return CommandExit(status, cwd, env)
 
@@ -144,7 +144,7 @@ class Cd(CommandBase):
         # Stringifying the path lets us support pathlib.Path's here.
         self._path = str(path)
 
-    def _exec(self, stdin, stdout, stderr, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # Check that the path is legit.
         if not os.path.isdir(self._path):
             raise ValueError(
@@ -161,7 +161,7 @@ class SetEnv(CommandBase):
         self._name = name
         self._val = val
 
-    def _exec(self, stdin, stdout, stderr, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # TODO: Support deletions and dictionary arguments.
         new_env = env.copy() if env is not None else {}
         new_env[self._name] = self._val
@@ -178,15 +178,16 @@ class OperationBase(CommandBase):
 
 
 class Then(OperationBase):
-    def _exec(self, stdin, stdout, stderr, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # Execute the first command.
-        left_exit = self._left._exec(stdin, stdout, stderr, cwd, env)
+        left_exit = self._left._exec(
+            stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
         # If it returns non-zero short-circuit.
         if left_exit.status != 0:
             return left_exit
         # Otherwise execute the second command.
         right_exit = self._right._exec(
-            stdin, stdout, stderr, left_exit.cwd, left_exit.env)
+            stdin_pipe, stdout_pipe, stderr_pipe, left_exit.cwd, left_exit.env)
         return right_exit
 
     def __repr__(self):
@@ -194,15 +195,16 @@ class Then(OperationBase):
 
 
 class OrThen(OperationBase):
-    def _exec(self, stdin, stdout, stderr, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # Execute the first command.
-        left_exit = self._left._exec(stdin, stdout, stderr, cwd, env)
+        left_exit = self._left._exec(
+            stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
         # If it returns zero short-circuit.
         if left_exit.status == 0:
             return left_exit
         # Otherwise ignore the error and execute the second command.
         right_exit = self._right._exec(
-            stdin, stdout, stderr, left_exit.cwd, left_exit.env)
+            stdin_pipe, stdout_pipe, stderr_pipe, left_exit.cwd, left_exit.env)
         return right_exit
 
     def __repr__(self):
@@ -217,7 +219,7 @@ class OrThen(OperationBase):
 # those can conflict with other listeners that might by in the same process,
 # and they won't work on Windows anyway.
 class Pipe(OperationBase):
-    def _exec(self, stdin, stdout, stderr, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
         # side could be a compound expression (like A.then(B)), so we have to
@@ -229,12 +231,14 @@ class Pipe(OperationBase):
 
         def do_left():
             with write_pipe:
-                return self._left._exec(stdin, write_pipe, stderr, cwd, env)
+                return self._left._exec(
+                    stdin_pipe, write_pipe, stderr_pipe, cwd, env)
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
         with read_pipe:
-            right_exit = self._right._exec(read_pipe, stdout, stderr, cwd, env)
+            right_exit = self._right._exec(
+                read_pipe, stdout_pipe, stderr_pipe, cwd, env)
         left_exit = left_thread.join()
 
         # Return the rightmost error, if any. Note that cwd and env changes
