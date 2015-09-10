@@ -43,7 +43,7 @@ def _new_or_existing_command(first, *rest, **kwargs):
     if isinstance(first, str):
         return Command(first, *rest, **kwargs)
     # Otherwise, the arguments must be a single command object.
-    if not isinstance(first, CommandBase):
+    if not isinstance(first, ExpressionBase):
         raise TypeError("First argument must be a string or a command object.")
     if rest or kwargs:
         raise TypeError("When a command object is given, "
@@ -51,7 +51,7 @@ def _new_or_existing_command(first, *rest, **kwargs):
     return first
 
 
-class CommandBase:
+class ExpressionBase:
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         raise NotImplementedError
 
@@ -78,7 +78,7 @@ class CommandBase:
         raise NotImplementedError
 
 
-class Command(CommandBase):
+class Command(ExpressionBase):
     def __init__(self, prog, *args):
         # If no explicit arguments are provided, split the program string on
         # whitespace and interpret any separate words as args. This allows the
@@ -109,7 +109,7 @@ class Command(CommandBase):
         return ' '.join(self._tuple)
 
 
-class Cd(CommandBase):
+class Cd(ExpressionBase):
     def __init__(self, path):
         # Stringifying the path lets us support pathlib.Path's here.
         self._path = str(path)
@@ -126,7 +126,7 @@ class Cd(CommandBase):
         return 'cd ' + self._path
 
 
-class SetEnv(CommandBase):
+class SetEnv(ExpressionBase):
     def __init__(self, name, val):
         self._name = name
         self._val = val
@@ -141,13 +141,13 @@ class SetEnv(CommandBase):
         return 'setenv {} {}'.format(self._name, self._val)
 
 
-class OperationBase(CommandBase):
+class CompoundExpression(ExpressionBase):
     def __init__(self, left, right):
         self._left = left
         self._right = right
 
 
-class Then(OperationBase):
+class Then(CompoundExpression):
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # Execute the first command.
         left_exit = self._left._exec(
@@ -164,7 +164,7 @@ class Then(OperationBase):
         return repr(self._left) + ' && ' + repr(self._right)
 
 
-class OrThen(OperationBase):
+class OrThen(CompoundExpression):
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # Execute the first command.
         left_exit = self._left._exec(
@@ -188,7 +188,7 @@ class OrThen(OperationBase):
 # time. There are Unix-specific ways to wait on multiple processes at once, but
 # those can conflict with other listeners that might by in the same process,
 # and they won't work on Windows anyway.
-class Pipe(OperationBase):
+class Pipe(CompoundExpression):
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
