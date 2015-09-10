@@ -17,55 +17,25 @@ def setenv(*args, **kwargs):
     return SetEnv(*args, **kwargs)
 
 
-def _run_and_get_result(command, stdout, stderr, trim, check):
-    capture_stdout = stdout is str or stdout is bytes
-    stdout_bytes = stdout is bytes
-    capture_stderr = stderr is str or stderr is bytes
-    stderr_bytes = stderr is bytes
-    status, output, err_output = _run_with_pipes(
-        command, capture_stdout, stdout_bytes, capture_stderr, stderr_bytes)
+def _run_and_get_result(command, stdin, stdout, stderr, trim, check):
+    stdin_writer = InputWriter(stdin)
+    stdout_reader = OutputReader(stdout)
+    stderr_reader = OutputReader(stderr)
+    with stdin_writer as stdin_pipe, \
+            stdout_reader as stdout_pipe, \
+            stderr_reader as stderr_pipe:
+        # Kick off the child processes. We discard the cwd and env returns.
+        status, _, _ = command._exec(
+            stdin_pipe, stdout_pipe, stderr_pipe, None, None)
+    stdout_output = stdout_reader.get_output()
+    stderr_output = stderr_reader.get_output()
     if trim:
-        output = _trim_or_none(output)
-        err_output = _trim_or_none(err_output)
-    result = Result(status, output, err_output)
+        stdout_output = _trim_or_none(stdout_output)
+        stderr_output = _trim_or_none(stderr_output)
+    result = Result(status, stdout_output, stderr_output)
     if check and status != 0:
         raise CheckedError(result, command)
     return result
-
-
-def _run_with_pipes(command, capture_stdout, stdout_binary, capture_stderr,
-                    stderr_binary):
-    # The subprocess module acceps None for stdin/stdout/stderr, to mean "leave
-    # the default". We use that instead of hardcoding 0/1/2.
-    stdout_write = context_manager_giving_none()
-    stderr_write = context_manager_giving_none()
-    # Create pipes if needed, and kick off reader threads. Note that if we ran
-    # the child process without reader threads, it could fill up its pipe
-    # buffers and hang.
-    if capture_stdout:
-        stdout_read, stdout_write = _open_pipe(stdout_binary)
-        stdout_thread = ThreadWithReturn(stdout_read.read)
-        stdout_thread.start()
-    if capture_stderr:
-        stderr_read, stderr_write = _open_pipe(stderr_binary)
-        stderr_thread = ThreadWithReturn(stderr_read.read)
-        stderr_thread.start()
-    with stdout_write as stdout, stderr_write as stderr:
-        # Kick off the child processes. We discard the cwd and env values.
-        status, _, _ = command._exec(None, stdout, stderr, None, None)
-        stdout_bytes = None
-        stderr_bytes = None
-        if capture_stdout:
-            # This close has to happen before join() or else the reader threads
-            # will never finish. It should be safe even though the with block
-            # is also going to close it.
-            stdout_write.close()
-            stdout_bytes = stdout_thread.join()
-        if capture_stderr:
-            # Same as above.
-            stderr_write.close()
-            stderr_bytes = stderr_thread.join()
-        return Result(status, stdout_bytes, stderr_bytes)
 
 
 def _new_or_existing_command(first, *rest, **kwargs):
@@ -85,8 +55,9 @@ class CommandBase:
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         raise NotImplementedError
 
-    def result(self, check=True, trim=False, stdout=str, stderr=None):
-        return _run_and_get_result(self, stdout, stderr, trim, check)
+    def result(self, stdin=None, stdout=str, stderr=None, check=True,
+               trim=False):
+        return _run_and_get_result(self, stdin, stdout, stderr, trim, check)
 
     def run(self, stdout=None, **kwargs):
         return self.result(stdout=stdout, **kwargs)
@@ -302,3 +273,92 @@ class ThreadWithReturn(threading.Thread):
         if self._exception is not None:
             raise self._exception
         return self._return
+
+
+class OutputReader:
+    def __init__(self, arg):
+        '''This class handles the user's stdout or stderr argument. It produces
+        a file/fileno to use with subprocess.call(), kicks off reader threads
+        (if appropriate), and collects output (if appropriate).'''
+        self._arg = arg
+        self._output = None
+        self._read = None
+        self._write = None
+        self._thread = None
+
+    def __enter__(self):
+        if self._arg is str or self._arg is bytes:
+            # The caller passed the str or bytes type (e.g. stdout=str).
+            # Collect output into the corresponding type.
+            binary_mode = self._arg is bytes
+            self._read, self._write = _open_pipe(binary_mode)
+            self._thread = ThreadWithReturn(self._read.read)
+            self._thread.start()
+            return self._write
+        else:
+            # Otherwise assume the argument is suitable for subprocess.call().
+            # (That is, it should either be a file descriptor or a file object
+            # backed by a file descriptor, or None to share the parent's
+            # stdout/stderr.)
+            return self._arg
+
+    def __exit__(self, *args):
+        # Control resumes here when child processes are finished. If we opened
+        # a pipe or spawned any threads in __enter__, we need to collect output
+        # and clean up.
+        if self._write:
+            self._write.close()
+            self._output = self._thread.join()
+            self._read.close()
+        # Allow exceptions to propagate.
+        return False
+
+    def get_output(self):
+        return self._output
+
+
+class InputWriter:
+    def __init__(self, arg):
+        '''This class handles the user's stdin argument. It produces a
+        file/fileno to use with subprocess.call() and kicks off a writer thread
+        (if appropriate).'''
+        self._arg = arg
+        self._output = None
+        self._read = None
+        self._write = None
+        self._thread = None
+
+    def __enter__(self):
+        if isinstance(self._arg, str) or isinstance(self._arg, bytes):
+            # The caller passed a string or bytes object (e.g. stdin="foo").
+            # Use it as input.
+            if not self._arg:
+                # Avoid spawning a thread for empty input.
+                return subprocess.DEVNULL
+            binary_mode = isinstance(self._arg, bytes)
+            self._read, self._write = _open_pipe(binary_mode)
+
+            # The writer thread must close the write end of the pipe itself, or
+            # child processes that read stdin will hang waiting for EOF.
+            def write_and_close():
+                self._write.write(self._arg)
+                self._write.close()
+            self._thread = ThreadWithReturn(write_and_close)
+            self._thread.start()
+            return self._read
+        else:
+            # Otherwise assume the argument is suitable for subprocess.call().
+            # (That is, it should either be a file descriptor or a file object
+            # backed by a file descriptor, or None to share the parent's
+            # stdin.)
+            return self._arg
+
+    def __exit__(self, *args):
+        # Control resumes here when child processes are finished. If we opened
+        # a pipe or spawned any threads in __enter__, we need to collect output
+        # and clean up.
+        if self._write:
+            self._read.close()
+            self._thread.join()
+        # Allow exceptions to propagate.
+        return False

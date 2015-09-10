@@ -42,3 +42,6 @@ print('cd:', out)
 
 out = setenv('MYVAR', 'foo').then('bash', '-c', 'echo "MYVAR=$MYVAR"').read()
 print('setenv:', out)
+
+out = cmd('sha1sum').read(stdin="foo")
+print('input:', out)
