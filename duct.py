@@ -55,15 +55,16 @@ class ExpressionBase:
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         raise NotImplementedError
 
-    def result(self, stdin=None, stdout=str, stderr=None, check=True,
+    def result(self, stdin=None, stdout=bytes, stderr=bytes, check=True,
                trim=False):
         return _run_and_get_result(self, stdin, stdout, stderr, trim, check)
 
-    def run(self, stdout=None, **kwargs):
-        return self.result(stdout=stdout, **kwargs)
+    def run(self, stdout=None, stderr=None, **kwargs):
+        return self.result(stdout=stdout, stderr=stderr, **kwargs)
 
-    def read(self, trim=True, **kwargs):
-        return self.result(trim=trim, **kwargs).stdout
+    def read(self, stdout=str, stderr=None, trim=True, **kwargs):
+        result = self.result(stdout=stdout, stderr=stderr, trim=trim, **kwargs)
+        return result.stdout
 
     def pipe(self, *args, **kwargs):
         return Pipe(self, _new_or_existing_command(*args, **kwargs))
