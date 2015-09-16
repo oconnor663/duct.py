@@ -30,8 +30,8 @@ def _run_and_get_result(command, stdin, stdout, stderr, trim, check):
     stdout_output = stdout_reader.get_output()
     stderr_output = stderr_reader.get_output()
     if trim:
-        stdout_output = _trim_or_none(stdout_output)
-        stderr_output = _trim_or_none(stderr_output)
+        stdout_output = _trim_if_string(stdout_output)
+        stderr_output = _trim_if_string(stderr_output)
     result = Result(status, stdout_output, stderr_output)
     if check and status != 0:
         raise CheckedError(result, command)
@@ -238,9 +238,17 @@ class CheckedError(Exception):
             self.command, self.result.status)
 
 
-def _trim_or_none(x):
-    newlines = b'\n\r' if isinstance(x, bytes) else '\n\r'
-    return None if x is None else x.rstrip(newlines)
+def _trim_if_string(x):
+    '''Trim trailing newlines, as the shell does by default when it's capturing
+    output. Only do this for strings, because it's likely to be a mistake when
+    used with bytes. For example:
+        # Does the user want this trimmed, or did they just forget trim=False?
+        cmd('head -c 10 /dev/urandom').read(stdout=bytes)
+    '''
+    if isinstance(x, str):
+        return x.rstrip('\n')
+    else:
+        return x
 
 
 def _open_pipe(binary_mode):
