@@ -1,23 +1,54 @@
 import collections
-import contextlib
 import os
 import subprocess
 import threading
 
-
-def cmd(*args, **kwargs):
-    return Command(*args, **kwargs)
-
-
-def cd(*args, **kwargs):
-    return Cd(*args, **kwargs)
+# Public API
+# ==========
 
 
-def setenv(*args, **kwargs):
-    return SetEnv(*args, **kwargs)
+def cmd(*parts):
+    return Command(*parts)
 
 
-def _run_and_get_result(command, stdin, stdout, stderr, trim, check):
+def cd(path):
+    return Cd(path)
+
+
+def setenv(name, val):
+    return SetEnv(name, val)
+
+
+class AbstractExpression:
+    def run(self, stdout=None, **result_kwargs):
+        return self.result(stdout=stdout, **result_kwargs)
+
+    def read(self, **result_kwargs):
+        result = self.result(**result_kwargs)
+        return result.stdout
+
+    def result(self, stdin=None, stdout=str, stderr=None, check=True,
+               trim=True):
+        return execute_expression(self, stdin, stdout, stderr, trim, check)
+
+    def pipe(self, *cmd):
+        return Pipe(self, parse_command(*cmd))
+
+    def then(self, *cmd):
+        return Then(self, parse_command(*cmd))
+
+    def orthen(self, *cmd):
+        return OrThen(self, parse_command(*cmd))
+
+
+# Implementation Details
+# ======================
+
+
+# Set up any readers or writers, kick off the recurisve _exec(), and collect
+# the results. This is the core of the three execution methods: run(), read(),
+# and result().
+def execute_expression(expr, stdin, stdout, stderr, trim, check):
     stdin_writer = InputWriter(stdin)
     stdout_reader = OutputReader(stdout)
     stderr_reader = OutputReader(stderr)
@@ -25,7 +56,7 @@ def _run_and_get_result(command, stdin, stdout, stderr, trim, check):
             stdout_reader as stdout_pipe, \
             stderr_reader as stderr_pipe:
         # Kick off the child processes. We discard the cwd and env returns.
-        status, _, _ = command._exec(
+        status, _, _ = expr._exec(
             stdin_pipe, stdout_pipe, stderr_pipe, None, None)
     stdout_output = stdout_reader.get_output()
     stderr_output = stderr_reader.get_output()
@@ -34,16 +65,22 @@ def _run_and_get_result(command, stdin, stdout, stderr, trim, check):
         stderr_output = _trim_if_string(stderr_output)
     result = Result(status, stdout_output, stderr_output)
     if check and status != 0:
-        raise CheckedError(result, command)
+        raise CheckedError(result, expr)
     return result
 
 
-def _new_or_existing_command(first, *rest, **kwargs):
+# We parse command arguments in many places: first in cmd(), but also in
+# methods like .pipe() and .then(). This function handles that parsing in all
+# those places. The caller can pass a command in three different ways:
+#   - a single string, split on whitespace interpreting quotes
+#   - multiple strings, used literally, no whitespace handling
+#   - an already-parsed command or compound command, used directly
+def parse_command(first, *rest, **kwargs):
     # If the arguments are strings, parse them the normal way.
     if isinstance(first, str):
         return Command(first, *rest, **kwargs)
     # Otherwise, the arguments must be a single command object.
-    if not isinstance(first, ExpressionBase):
+    if not isinstance(first, AbstractExpression):
         raise TypeError("First argument must be a string or a command object.")
     if rest or kwargs:
         raise TypeError("When a command object is given, "
@@ -51,35 +88,7 @@ def _new_or_existing_command(first, *rest, **kwargs):
     return first
 
 
-class ExpressionBase:
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
-        raise NotImplementedError
-
-    def result(self, stdin=None, stdout=bytes, stderr=bytes, check=True,
-               trim=False):
-        return _run_and_get_result(self, stdin, stdout, stderr, trim, check)
-
-    def run(self, stdout=None, stderr=None, **kwargs):
-        return self.result(stdout=stdout, stderr=stderr, **kwargs)
-
-    def read(self, stdout=str, stderr=None, trim=True, **kwargs):
-        result = self.result(stdout=stdout, stderr=stderr, trim=trim, **kwargs)
-        return result.stdout
-
-    def pipe(self, *args, **kwargs):
-        return Pipe(self, _new_or_existing_command(*args, **kwargs))
-
-    def then(self, *args, **kwargs):
-        return Then(self, _new_or_existing_command(*args, **kwargs))
-
-    def orthen(self, *args, **kwargs):
-        return OrThen(self, _new_or_existing_command(*args, **kwargs))
-
-    def __repr__(self):
-        raise NotImplementedError
-
-
-class Command(ExpressionBase):
+class Command(AbstractExpression):
     def __init__(self, prog, *args):
         # If no explicit arguments are provided, split the program string on
         # whitespace and interpret any separate words as args. This allows the
@@ -110,7 +119,7 @@ class Command(ExpressionBase):
         return ' '.join(self._tuple)
 
 
-class Cd(ExpressionBase):
+class Cd(AbstractExpression):
     def __init__(self, path):
         # Stringifying the path lets us support pathlib.Path's here.
         self._path = str(path)
@@ -127,7 +136,7 @@ class Cd(ExpressionBase):
         return 'cd ' + self._path
 
 
-class SetEnv(ExpressionBase):
+class SetEnv(AbstractExpression):
     def __init__(self, name, val):
         self._name = name
         self._val = val
@@ -142,7 +151,7 @@ class SetEnv(ExpressionBase):
         return 'setenv {} {}'.format(self._name, self._val)
 
 
-class CompoundExpression(ExpressionBase):
+class CompoundExpression(AbstractExpression):
     def __init__(self, left, right):
         self._left = left
         self._right = right
@@ -255,11 +264,6 @@ def _open_pipe(binary_mode):
     read_fd, write_fd = os.pipe()
     read_mode, write_mode = ('rb', 'wb') if binary_mode else ('r', 'w')
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
-
-
-@contextlib.contextmanager
-def context_manager_giving_none():
-    yield None
 
 
 class ThreadWithReturn(threading.Thread):
