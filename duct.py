@@ -1,5 +1,6 @@
 import collections
 import os
+import re
 import subprocess
 import threading
 
@@ -116,7 +117,16 @@ class Command(AbstractExpression):
         return CommandExit(status, cwd, env)
 
     def __repr__(self):
-        return ' '.join(self._tuple)
+        quoted_parts = []
+        for part in self._tuple:
+            # Decode bytes.
+            if not isinstance(part, str):
+                part = part.decode()
+            # Quote strings that have whitespace.
+            if re.search(r'\s+', part):
+                part = '"' + part + '"'
+            quoted_parts.append(part)
+        return ' '.join(quoted_parts)
 
 
 class Cd(AbstractExpression):
@@ -171,7 +181,7 @@ class Then(CompoundExpression):
         return right_exit
 
     def __repr__(self):
-        return repr(self._left) + ' && ' + repr(self._right)
+        return join_with_maybe_parens(self._left, self._right, ' && ', Pipe)
 
 
 class OrThen(CompoundExpression):
@@ -188,7 +198,7 @@ class OrThen(CompoundExpression):
         return right_exit
 
     def __repr__(self):
-        return repr(self._left) + ' || ' + repr(self._right)
+        return join_with_maybe_parens(self._left, self._right, ' || ', Pipe)
 
 
 # Pipe uses another thread to run the left side of the pipe in parallel with
@@ -229,7 +239,8 @@ class Pipe(CompoundExpression):
             return CommandExit(left_exit.status, cwd, env)
 
     def __repr__(self):
-        return repr(self._left) + ' | ' + repr(self._right)
+        return join_with_maybe_parens(
+            self._left, self._right, ' || ', (Then, OrThen))
 
 
 CommandExit = collections.namedtuple('CommandExit', ['status', 'cwd', 'env'])
@@ -264,6 +275,16 @@ def _open_pipe(binary_mode):
     read_fd, write_fd = os.pipe()
     read_mode, write_mode = ('rb', 'wb') if binary_mode else ('r', 'w')
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
+
+
+def join_with_maybe_parens(left, right, joiner, paren_types):
+    parts = []
+    for part in (left, right):
+        if isinstance(part, paren_types):
+            parts.append('(' + repr(part) + ')')
+        else:
+            parts.append(repr(part))
+    return joiner.join(parts)
 
 
 class ThreadWithReturn(threading.Thread):
