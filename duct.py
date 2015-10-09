@@ -1,5 +1,6 @@
 import collections
 import os
+import pathlib
 import re
 import subprocess
 import threading
@@ -10,6 +11,10 @@ import threading
 
 def cmd(*parts):
     return Command(*parts)
+
+
+def sh(s):
+    return cmd(*split_string_with_quotes(s))
 
 
 def cd(path):
@@ -33,13 +38,13 @@ class AbstractExpression:
         return execute_expression(self, stdin, stdout, stderr, trim, check)
 
     def pipe(self, *cmd):
-        return Pipe(self, parse_command(*cmd))
+        return Pipe(self, command_or_parts(*cmd))
 
     def then(self, *cmd):
-        return Then(self, parse_command(*cmd))
+        return Then(self, command_or_parts(*cmd))
 
     def orthen(self, *cmd):
-        return OrThen(self, parse_command(*cmd))
+        return OrThen(self, command_or_parts(*cmd))
 
 
 # Implementation Details
@@ -70,38 +75,31 @@ def execute_expression(expr, stdin, stdout, stderr, trim, check):
     return result
 
 
-# We parse command arguments in many places: first in cmd(), but also in
-# methods like .pipe() and .then(). This function handles that parsing in all
-# those places. The caller can pass a command in three different ways:
-#   - a single string, split on whitespace interpreting quotes
-#   - multiple strings, used literally, no whitespace handling
-#   - an already-parsed command or compound command, used directly
-def parse_command(first, *rest, **kwargs):
-    # If the arguments are strings, parse them the normal way.
-    if isinstance(first, str):
-        return Command(first, *rest, **kwargs)
-    # Otherwise, the arguments must be a single command object.
-    if not isinstance(first, AbstractExpression):
-        raise TypeError("First argument must be a string or a command object.")
-    if rest or kwargs:
-        raise TypeError("When a command object is given, "
-                        "no other arguments are allowed.")
-    return first
+# Methods like pipe() take a command argument. This can either be arguments to
+# a Command constructor, or it can be an already-fully-formed command, like
+# another compount expression or the output of sh().
+def command_or_parts(first, *rest):
+    if isinstance(first, AbstractExpression):
+        if rest:
+            raise TypeError("When an expression object is given, "
+                            "no other arguments are allowed.")
+        return first
+    return Command(first, *rest)
 
 
 class Command(AbstractExpression):
     def __init__(self, prog, *args):
-        # If no explicit arguments are provided, split the program string on
-        # whitespace and interpret any separate words as args. This allows the
-        # user to type a command like "cat -vet /dev/urandom" as a single
-        # string instead of typing [","] between each word.
-        # XXX: This makes it impossible to directly invoke a program named
-        # "with space" if there aren't any positional arguments. But...does
-        # that ever happen?
-        if not args:
-            self._tuple = prog.split()
-        else:
-            self._tuple = (prog,) + args
+        '''The prog and args will be passed directly to subprocess.call(),
+        which determines the types allowed here (strings and bytes). In
+        addition, we also explicitly support pathlib Paths, by converting them
+        to strings.'''
+        converted_parts = []
+        for part in (prog,) + args:
+            if isinstance(part, pathlib.PurePath):
+                converted_parts.append(str(part))
+            else:
+                converted_parts.append(part)
+        self._tuple = tuple(converted_parts)
 
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         full_env = None
@@ -396,3 +394,43 @@ class InputWriter:
             self._thread.join()
         # Allow exceptions to propagate.
         return False
+
+
+def split_string_with_quotes(s):
+    words = []
+    word = ""
+    quote_starters = ("'", '"')
+    starter = None
+    for c in s:
+        # Are we in a quotation?
+        if starter is not None:
+            # Is this the end of the quotation?
+            if c == starter:
+                starter = None
+                # Note that we don't necessarily finish the word.
+            # The quotation's still going.
+            else:
+                word += c
+        # Are we starting a quotation?
+        elif c in quote_starters:
+            starter = c
+        # We're not in a quotation. Are we done with a word?
+        elif c.isspace():
+            # Add the finished word, if we were in the middle of one.
+            if word:
+                words.append(word)
+                word = ""
+        # We're in the middle of a word.
+        else:
+            word += c
+    # Make sure we didn't end with an unclosed quote.
+    if starter is not None:
+        raise SplitError("unclosed quote in: " + repr(s))
+    # Finally, add the last word if the string ended in the middle of one.
+    if word:
+        words.append(word)
+    return words
+
+
+class SplitError(Exception):
+    pass

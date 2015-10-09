@@ -1,16 +1,16 @@
 #! /usr/bin/env python
 
-from duct import cmd, cd, setenv, CheckedError
+from duct import cmd, sh, cd, setenv, CheckedError
 
-cmd('echo hello world').run()
+sh('echo hello world').run()
 
-out = cmd('echo', 'some     stuff').read()
+out = sh('echo "some     stuff"').read()
 print('output: "{}"'.format(out))
 
-out = cmd('echo more stuff').result()
+out = sh('echo more stuff').result()
 print('result:', out)
 
-out = cmd('head -c 10 /dev/urandom').read(stdout=bytes)
+out = sh('head -c 10 /dev/urandom').read(stdout=bytes)
 print('random:', out)
 
 try:
@@ -18,22 +18,22 @@ try:
 except CheckedError as e:
     print('error:', e)
 
-out = (cmd('cat /dev/zero')
-       .pipe('head -c 10')
-       .pipe('cat -vet')
+out = (sh('cat /dev/zero')
+       .pipe(sh('head -c 10'))
+       .pipe('cat', '-vet')
        .read(check=False))
 print('pipe:', out)
 
-out = (cmd('echo -n hi')
+out = (sh('echo -n hi')
        .then('false')
-       .pipe('sed s/hi/hee/')
-       .orthen('echo haw')
+       .pipe('sed', 's/hi/hee/')
+       .orthen('echo', 'haw')
        .read())
 print('and/or:', out)
 
-out = (cmd('echo moomoo')
-       .pipe(cmd('head -c 3').pipe('sed s/o/a/g')
-             .then('sed s/o/e/g'))
+out = (sh('echo moomoo')
+       .pipe(sh('head -c 3').pipe('sed', 's/o/a/g')
+             .then('sed', 's/o/e/g'))
        .read())
 print('nesting:', out)
 
