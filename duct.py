@@ -238,7 +238,7 @@ class Pipe(CompoundExpression):
 
     def __repr__(self):
         return join_with_maybe_parens(
-            self._left, self._right, ' || ', (Then, OrThen))
+            self._left, self._right, ' | ', (Then, OrThen))
 
 
 CommandExit = collections.namedtuple('CommandExit', ['status', 'cwd', 'env'])
