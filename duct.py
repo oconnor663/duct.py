@@ -112,7 +112,7 @@ class Command(AbstractExpression):
             self._tuple, stdin=stdin_pipe, stdout=stdout_pipe,
             stderr=stderr_pipe, cwd=cwd, env=full_env)
         # A normal command never changes cwd or env.
-        return CommandExit(status, cwd, env)
+        return ExpressionExit(status, cwd, env)
 
     def __repr__(self):
         quoted_parts = []
@@ -138,7 +138,7 @@ class Cd(AbstractExpression):
             raise ValueError(
                 '"{}" is not a valid directory.'.format(self._path))
         # Return it so that subsequent commands will use it as the cwd.
-        return CommandExit(0, self._path, env)
+        return ExpressionExit(0, self._path, env)
 
     def __repr__(self):
         return 'cd ' + self._path
@@ -153,7 +153,7 @@ class SetEnv(AbstractExpression):
         # TODO: Support deletions and dictionary arguments.
         new_env = env.copy() if env is not None else {}
         new_env[self._name] = self._val
-        return CommandExit(0, cwd, new_env)
+        return ExpressionExit(0, cwd, new_env)
 
     def __repr__(self):
         return 'setenv {} {}'.format(self._name, self._val)
@@ -232,16 +232,17 @@ class Pipe(CompoundExpression):
         # Return the rightmost error, if any. Note that cwd and env changes
         # never propagate out of the pipe. This is the same behavior as bash.
         if right_exit.status != 0:
-            return CommandExit(right_exit.status, cwd, env)
+            return ExpressionExit(right_exit.status, cwd, env)
         else:
-            return CommandExit(left_exit.status, cwd, env)
+            return ExpressionExit(left_exit.status, cwd, env)
 
     def __repr__(self):
         return join_with_maybe_parens(
             self._left, self._right, ' | ', (Then, OrThen))
 
 
-CommandExit = collections.namedtuple('CommandExit', ['status', 'cwd', 'env'])
+ExpressionExit = collections.namedtuple(
+    'ExpressionExit', ['status', 'cwd', 'env'])
 
 Result = collections.namedtuple('Result', ['status', 'stdout', 'stderr'])
 
