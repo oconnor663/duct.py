@@ -7,7 +7,7 @@ sh('echo hello world').run()
 out = sh('echo "some     stuff"').read()
 print('output: "{}"'.format(out))
 
-out = sh('echo more stuff').result()
+out = sh('echo more stuff').run(stdout=str)
 print('result:', out)
 
 out = sh('head -c 10 /dev/urandom').read(stdout=bytes)

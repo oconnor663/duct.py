@@ -26,16 +26,13 @@ def setenv(name, val):
 
 
 class AbstractExpression:
-    def run(self, stdout=None, **result_kwargs):
-        return self.result(stdout=stdout, **result_kwargs)
+    def run(self, stdin=None, stdout=None, stderr=None, check=True,
+            trim=False):
+        return run(self, stdin, stdout, stderr, trim, check)
 
-    def read(self, **result_kwargs):
-        result = self.result(**result_kwargs)
+    def read(self, stdout=str, trim=True, **result_kwargs):
+        result = self.run(stdout=stdout, trim=trim, **result_kwargs)
         return result.stdout
-
-    def result(self, stdin=None, stdout=str, stderr=None, check=True,
-               trim=True):
-        return execute_expression(self, stdin, stdout, stderr, trim, check)
 
     def pipe(self, *cmd):
         return Pipe(self, command_or_parts(*cmd))
@@ -54,7 +51,7 @@ class AbstractExpression:
 # Set up any readers or writers, kick off the recurisve _exec(), and collect
 # the results. This is the core of the three execution methods: run(), read(),
 # and result().
-def execute_expression(expr, stdin, stdout, stderr, trim, check):
+def run(expr, stdin, stdout, stderr, trim, check):
     stdin_writer = InputWriter(stdin)
     stdout_reader = OutputReader(stdout)
     stderr_reader = OutputReader(stderr)
@@ -287,6 +284,10 @@ def join_with_maybe_parens(left, right, joiner, paren_types):
 
 
 class ThreadWithReturn(threading.Thread):
+    '''The standard Thread class doesn't give us any way to access the return
+    value of the target function, or to see any exceptions that might've gotten
+    thrown. This is a this wrapper around Thread that enhances the join
+    function to return values and reraise exceptions.'''
     def __init__(self, target, args=(), kwargs={}, **thread_kwargs):
         threading.Thread.__init__(self, **thread_kwargs)
         self._target = target
