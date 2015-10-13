@@ -17,18 +17,10 @@ def sh(s):
     return cmd(*split_string_with_quotes(s))
 
 
-def cd(path):
-    return Cd(path)
-
-
-def setenv(name, val):
-    return SetEnv(name, val)
-
-
 class AbstractExpression:
     def run(self, stdin=None, stdout=None, stderr=None, check=True,
-            trim=False):
-        return run(self, stdin, stdout, stderr, trim, check)
+            trim=False, cwd=None, env=None):
+        return run(self, stdin, stdout, stderr, trim, check, cwd, env)
 
     def read(self, stdout=str, trim=True, **result_kwargs):
         result = self.run(stdout=stdout, trim=trim, **result_kwargs)
@@ -51,16 +43,15 @@ class AbstractExpression:
 # Set up any readers or writers, kick off the recurisve _exec(), and collect
 # the results. This is the core of the three execution methods: run(), read(),
 # and result().
-def run(expr, stdin, stdout, stderr, trim, check):
+def run(expr, stdin, stdout, stderr, trim, check, cwd, env):
     stdin_writer = InputWriter(stdin)
     stdout_reader = OutputReader(stdout)
     stderr_reader = OutputReader(stderr)
     with stdin_writer as stdin_pipe, \
             stdout_reader as stdout_pipe, \
             stderr_reader as stderr_pipe:
-        # Kick off the child processes. We discard the cwd and env returns.
-        status, _, _ = expr._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, None, None)
+        # Kick off the child processes.
+        status = expr._exec(stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
     stdout_output = stdout_reader.get_output()
     stderr_output = stderr_reader.get_output()
     if trim:
@@ -105,11 +96,13 @@ class Command(AbstractExpression):
         if env is not None:
             full_env = os.environ.copy()
             full_env.update(env)
+        # Explicit support for Path values.
+        if isinstance(cwd, pathlib.PurePath):
+            cwd = str(cwd)
         status = subprocess.call(
             self._tuple, stdin=stdin_pipe, stdout=stdout_pipe,
             stderr=stderr_pipe, cwd=cwd, env=full_env)
-        # A normal command never changes cwd or env.
-        return ExpressionExit(status, cwd, env)
+        return status
 
     def __repr__(self):
         quoted_parts = []
@@ -124,38 +117,6 @@ class Command(AbstractExpression):
         return ' '.join(quoted_parts)
 
 
-class Cd(AbstractExpression):
-    def __init__(self, path):
-        # Stringifying the path lets us support pathlib.Path's here.
-        self._path = str(path)
-
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
-        # Check that the path is legit.
-        if not os.path.isdir(self._path):
-            raise ValueError(
-                '"{}" is not a valid directory.'.format(self._path))
-        # Return it so that subsequent commands will use it as the cwd.
-        return ExpressionExit(0, self._path, env)
-
-    def __repr__(self):
-        return 'cd ' + self._path
-
-
-class SetEnv(AbstractExpression):
-    def __init__(self, name, val):
-        self._name = name
-        self._val = val
-
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
-        # TODO: Support deletions and dictionary arguments.
-        new_env = env.copy() if env is not None else {}
-        new_env[self._name] = self._val
-        return ExpressionExit(0, cwd, new_env)
-
-    def __repr__(self):
-        return 'setenv {} {}'.format(self._name, self._val)
-
-
 class CompoundExpression(AbstractExpression):
     def __init__(self, left, right):
         self._left = left
@@ -165,15 +126,15 @@ class CompoundExpression(AbstractExpression):
 class Then(CompoundExpression):
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # Execute the first command.
-        left_exit = self._left._exec(
+        left_status = self._left._exec(
             stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
         # If it returns non-zero short-circuit.
-        if left_exit.status != 0:
-            return left_exit
+        if left_status != 0:
+            return left_status
         # Otherwise execute the second command.
-        right_exit = self._right._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, left_exit.cwd, left_exit.env)
-        return right_exit
+        right_status = self._right._exec(
+            stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
+        return right_status
 
     def __repr__(self):
         return join_with_maybe_parens(self._left, self._right, ' && ', Pipe)
@@ -182,15 +143,15 @@ class Then(CompoundExpression):
 class OrThen(CompoundExpression):
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
         # Execute the first command.
-        left_exit = self._left._exec(
+        left_status = self._left._exec(
             stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
         # If it returns zero short-circuit.
-        if left_exit.status == 0:
-            return left_exit
+        if left_status == 0:
+            return left_status
         # Otherwise ignore the error and execute the second command.
-        right_exit = self._right._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, left_exit.cwd, left_exit.env)
-        return right_exit
+        right_status = self._right._exec(
+            stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
+        return right_status
 
     def __repr__(self):
         return join_with_maybe_parens(self._left, self._right, ' || ', Pipe)
@@ -222,24 +183,21 @@ class Pipe(CompoundExpression):
         left_thread.start()
 
         with read_pipe:
-            right_exit = self._right._exec(
+            right_status = self._right._exec(
                 read_pipe, stdout_pipe, stderr_pipe, cwd, env)
-        left_exit = left_thread.join()
+        left_status = left_thread.join()
 
         # Return the rightmost error, if any. Note that cwd and env changes
         # never propagate out of the pipe. This is the same behavior as bash.
-        if right_exit.status != 0:
-            return ExpressionExit(right_exit.status, cwd, env)
+        if right_status != 0:
+            return right_status
         else:
-            return ExpressionExit(left_exit.status, cwd, env)
+            return left_status
 
     def __repr__(self):
         return join_with_maybe_parens(
             self._left, self._right, ' | ', (Then, OrThen))
 
-
-ExpressionExit = collections.namedtuple(
-    'ExpressionExit', ['status', 'cwd', 'env'])
 
 Result = collections.namedtuple('Result', ['status', 'stdout', 'stderr'])
 

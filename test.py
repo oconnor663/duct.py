@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
-from duct import cmd, sh, cd, setenv, CheckedError
+from duct import cmd, sh, CheckedError
+from pathlib import Path
 
 sh('echo hello world').run()
 
@@ -37,10 +38,10 @@ out = (sh('echo moomoo')
        .read())
 print('nesting:', out)
 
-out = cd('/tmp').then('pwd').read()
+out = cmd('pwd').read(cwd=Path('/tmp'))
 print('cd:', out)
 
-out = setenv('MYVAR', 'foo').then('bash', '-c', 'echo "MYVAR=$MYVAR"').read()
+out = cmd('bash', '-c', 'echo "MYVAR=$MYVAR"').read(env={'MYVAR': 'foo'})
 print('setenv:', out)
 
 out = cmd('sha1sum').read(stdin="foo")
