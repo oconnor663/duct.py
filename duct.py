@@ -312,7 +312,6 @@ class InputWriter:
         file/fileno to use with subprocess.call() and kicks off a writer thread
         (if appropriate).'''
         self._arg = arg
-        self._output = None
         self._read = None
         self._write = None
         self._thread = None
