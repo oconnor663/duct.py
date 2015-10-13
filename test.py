@@ -41,8 +41,11 @@ print('nesting:', out)
 out = cmd('pwd').read(cwd=Path('/tmp'))
 print('cd:', out)
 
-out = cmd('bash', '-c', 'echo "MYVAR=$MYVAR"').read(env={'MYVAR': 'foo'})
+out = cmd('bash', '-c', 'echo "MYVAR=\'$MYVAR\'"').read(env={'MYVAR': 'foo'})
 print('setenv:', out)
+
+out = cmd('bash', '-c', 'echo "HOME=\'$HOME\'"').read(full_env={})
+print('clear env:', out)
 
 out = cmd('sha1sum').read(stdin="foo")
 print('input:', out)

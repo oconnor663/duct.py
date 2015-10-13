@@ -19,8 +19,9 @@ def sh(s):
 
 class AbstractExpression:
     def run(self, stdin=None, stdout=None, stderr=None, check=True,
-            trim=False, cwd=None, env=None):
-        return run(self, stdin, stdout, stderr, trim, check, cwd, env)
+            trim=False, cwd=None, env=None, full_env=None):
+        return run(self, stdin, stdout, stderr, trim, check, cwd, env,
+                   full_env)
 
     def read(self, stdout=str, trim=True, **result_kwargs):
         result = self.run(stdout=stdout, trim=trim, **result_kwargs)
@@ -43,7 +44,8 @@ class AbstractExpression:
 # Set up any readers or writers, kick off the recurisve _exec(), and collect
 # the results. This is the core of the three execution methods: run(), read(),
 # and result().
-def run(expr, stdin, stdout, stderr, trim, check, cwd, env):
+def run(expr, stdin, stdout, stderr, trim, check, cwd, env, full_env):
+    full_env = update_env(None, env, full_env)
     stdin_writer = InputWriter(stdin)
     stdout_reader = OutputReader(stdout)
     stderr_reader = OutputReader(stderr)
@@ -51,7 +53,8 @@ def run(expr, stdin, stdout, stderr, trim, check, cwd, env):
             stdout_reader as stdout_pipe, \
             stderr_reader as stderr_pipe:
         # Kick off the child processes.
-        status = expr._exec(stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
+        status = expr._exec(stdin_pipe, stdout_pipe, stderr_pipe, cwd,
+                            full_env)
     stdout_output = stdout_reader.get_output()
     stderr_output = stderr_reader.get_output()
     if trim:
@@ -89,13 +92,7 @@ class Command(AbstractExpression):
                 converted_parts.append(part)
         self._tuple = tuple(converted_parts)
 
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
-        full_env = None
-        # The env parameter only contains additional env vars. We need to copy
-        # the entire working environment first if we're going to pass it in.
-        if env is not None:
-            full_env = os.environ.copy()
-            full_env.update(env)
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
         # Explicit support for Path values.
         if isinstance(cwd, pathlib.PurePath):
             cwd = str(cwd)
@@ -124,16 +121,16 @@ class CompoundExpression(AbstractExpression):
 
 
 class Then(CompoundExpression):
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
         # Execute the first command.
         left_status = self._left._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
+            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
         # If it returns non-zero short-circuit.
         if left_status != 0:
             return left_status
         # Otherwise execute the second command.
         right_status = self._right._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
+            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
         return right_status
 
     def __repr__(self):
@@ -141,16 +138,16 @@ class Then(CompoundExpression):
 
 
 class OrThen(CompoundExpression):
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
         # Execute the first command.
         left_status = self._left._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
+            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
         # If it returns zero short-circuit.
         if left_status == 0:
             return left_status
         # Otherwise ignore the error and execute the second command.
         right_status = self._right._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, cwd, env)
+            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
         return right_status
 
     def __repr__(self):
@@ -165,7 +162,7 @@ class OrThen(CompoundExpression):
 # those can conflict with other listeners that might by in the same process,
 # and they won't work on Windows anyway.
 class Pipe(CompoundExpression):
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, env):
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
         # side could be a compound expression (like A.then(B)), so we have to
@@ -178,13 +175,13 @@ class Pipe(CompoundExpression):
         def do_left():
             with write_pipe:
                 return self._left._exec(
-                    stdin_pipe, write_pipe, stderr_pipe, cwd, env)
+                    stdin_pipe, write_pipe, stderr_pipe, cwd, full_env)
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
         with read_pipe:
             right_status = self._right._exec(
-                read_pipe, stdout_pipe, stderr_pipe, cwd, env)
+                read_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
         left_status = left_thread.join()
 
         # Return the rightmost error, if any. Note that cwd and env changes
@@ -394,3 +391,26 @@ def split_string_with_quotes(s):
 
 class SplitError(Exception):
     pass
+
+
+def update_env(parent, env, full_env):
+    '''We support the 'env' parameter to add environment variables to the
+    default environment (this differs from subprocess's standard behavior, but
+    it's by far the most common use case), and the 'full_env' parameter to
+    supply the entire environment. Callers shouldn't supply both in one place,
+    but it's possible for parameters on individual commands to edit or override
+    what's given to run().'''
+    if env is not None and full_env is not None:
+        raise ValueError(
+            'Cannot specify both env and full_env at the same time.')
+
+    if parent is None:
+        ret = os.environ.copy()
+    else:
+        ret = parent.copy()
+
+    if env is not None:
+        ret.update(env)
+    if full_env is not None:
+        ret = full_env
+    return ret
