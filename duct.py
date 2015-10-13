@@ -55,8 +55,8 @@ def run(expr, stdin, stdout, stderr, trim, check, cwd, env):
     stdout_output = stdout_reader.get_output()
     stderr_output = stderr_reader.get_output()
     if trim:
-        stdout_output = _trim_if_string(stdout_output)
-        stderr_output = _trim_if_string(stderr_output)
+        stdout_output = trim_if_string(stdout_output)
+        stderr_output = trim_if_string(stderr_output)
     result = Result(status, stdout_output, stderr_output)
     if check and status != 0:
         raise CheckedError(result, expr)
@@ -173,7 +173,7 @@ class Pipe(CompoundExpression):
         # its end of the pipe. Closing the write end allows the right side to
         # receive EOF, and closing the read end allows the left side to receive
         # SIGPIPE.
-        read_pipe, write_pipe = _open_pipe(binary_mode=True)
+        read_pipe, write_pipe = open_pipe(binary_mode=True)
 
         def do_left():
             with write_pipe:
@@ -212,7 +212,7 @@ class CheckedError(Exception):
             self.command, self.result.status)
 
 
-def _trim_if_string(x):
+def trim_if_string(x):
     '''Trim trailing newlines, as the shell does by default when it's capturing
     output. Only do this for strings, because it's likely to be a mistake when
     used with bytes. For example:
@@ -225,7 +225,7 @@ def _trim_if_string(x):
         return x
 
 
-def _open_pipe(binary_mode):
+def open_pipe(binary_mode):
     read_fd, write_fd = os.pipe()
     read_mode, write_mode = ('rb', 'wb') if binary_mode else ('r', 'w')
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
@@ -283,7 +283,7 @@ class OutputReader:
             # The caller passed the str or bytes type (e.g. stdout=str).
             # Collect output into the corresponding type.
             binary_mode = self._arg is bytes
-            self._read, self._write = _open_pipe(binary_mode)
+            self._read, self._write = open_pipe(binary_mode)
             self._thread = ThreadWithReturn(self._read.read)
             self._thread.start()
             return self._write
@@ -328,7 +328,7 @@ class InputWriter:
                 # Avoid spawning a thread for empty input.
                 return subprocess.DEVNULL
             binary_mode = isinstance(self._arg, bytes)
-            self._read, self._write = _open_pipe(binary_mode)
+            self._read, self._write = open_pipe(binary_mode)
 
             # The writer thread must close the write end of the pipe itself, or
             # child processes that read stdin will hang waiting for EOF.
