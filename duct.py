@@ -17,7 +17,9 @@ def sh(s):
     return cmd(*split_string_with_quotes(s))
 
 
-class AbstractExpression:
+class Expression:
+    'Abstract base class for all expression types.'
+
     def run(self, stdin=None, stdout=None, stderr=None, check=True,
             trim=False, cwd=None, env=None, full_env=None):
         return run(self, stdin, stdout, stderr, trim, check, cwd, env,
@@ -70,7 +72,7 @@ def run(expr, stdin, stdout, stderr, trim, check, cwd, env, full_env):
 # a Command constructor, or it can be an already-fully-formed command, like
 # another compount expression or the output of sh().
 def command_or_parts(first, *rest):
-    if isinstance(first, AbstractExpression):
+    if isinstance(first, Expression):
         if rest:
             raise TypeError("When an expression object is given, "
                             "no other arguments are allowed.")
@@ -78,7 +80,7 @@ def command_or_parts(first, *rest):
     return Command(first, *rest)
 
 
-class Command(AbstractExpression):
+class Command(Expression):
     def __init__(self, prog, *args):
         '''The prog and args will be passed directly to subprocess.call(),
         which determines the types allowed here (strings and bytes). In
@@ -114,7 +116,7 @@ class Command(AbstractExpression):
         return ' '.join(quoted_parts)
 
 
-class CompoundExpression(AbstractExpression):
+class CompoundExpression(Expression):
     def __init__(self, left, right):
         self._left = left
         self._right = right
