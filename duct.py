@@ -243,7 +243,7 @@ def join_with_maybe_parens(left, right, joiner, paren_types):
 class ThreadWithReturn(threading.Thread):
     '''The standard Thread class doesn't give us any way to access the return
     value of the target function, or to see any exceptions that might've gotten
-    thrown. This is a this wrapper around Thread that enhances the join
+    thrown. This is a thin wrapper around Thread that enhances the join
     function to return values and reraise exceptions.'''
     def __init__(self, target, args=(), kwargs={}, **thread_kwargs):
         threading.Thread.__init__(self, **thread_kwargs)
