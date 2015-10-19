@@ -184,7 +184,7 @@ class Pipe(CompoundExpression):
 Result = collections.namedtuple('Result', ['status', 'stdout', 'stderr'])
 
 
-class CheckedError(Exception):
+class CheckedError(subprocess.CalledProcessError):
     def __init__(self, result, command):
         self.result = result
         self.command = command
