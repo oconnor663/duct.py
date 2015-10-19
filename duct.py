@@ -9,12 +9,12 @@ import threading
 # ==========
 
 
-def cmd(*parts):
-    return Command(*parts)
+def cmd(prog, *args, **kwargs):
+    return Command(prog, *args, **kwargs)
 
 
-def sh(s):
-    return cmd(*split_string_with_quotes(s))
+def sh(s, **kwargs):
+    return cmd(*split_string_with_quotes(s, **kwargs))
 
 
 class Expression:
@@ -25,18 +25,15 @@ class Expression:
         return run(self, stdin, stdout, stderr, trim, check, cwd, env,
                    full_env)
 
-    def read(self, stdout=str, trim=True, **result_kwargs):
-        result = self.run(stdout=stdout, trim=trim, **result_kwargs)
+    def read(self, stdout=str, trim=True, **kwargs):
+        result = self.run(stdout=stdout, trim=trim, **kwargs)
         return result.stdout
 
-    def pipe(self, *cmd):
-        return Pipe(self, command_or_parts(*cmd))
+    def pipe(self, *cmd, **kwargs):
+        return Pipe(self, command_or_parts(*cmd, **kwargs))
 
-    def then(self, *cmd):
-        return Then(self, command_or_parts(*cmd))
-
-    def orthen(self, *cmd):
-        return OrThen(self, command_or_parts(*cmd))
+    def then(self, *cmd, **kwargs):
+        return Then(self, command_or_parts(*cmd, **kwargs))
 
 
 # Implementation Details
@@ -71,17 +68,17 @@ def run(expr, stdin, stdout, stderr, trim, check, cwd, env, full_env):
 # Methods like pipe() take a command argument. This can either be arguments to
 # a Command constructor, or it can be an already-fully-formed command, like
 # another compount expression or the output of sh().
-def command_or_parts(first, *rest):
+def command_or_parts(first, *rest, **kwargs):
     if isinstance(first, Expression):
-        if rest:
+        if rest or kwargs:
             raise TypeError("When an expression object is given, "
                             "no other arguments are allowed.")
         return first
-    return Command(first, *rest)
+    return Command(first, *rest, **kwargs)
 
 
 class Command(Expression):
-    def __init__(self, prog, *args):
+    def __init__(self, prog, *args, check=True):
         '''The prog and args will be passed directly to subprocess.call(),
         which determines the types allowed here (strings and bytes). In
         addition, we also explicitly support pathlib Paths, by converting them
@@ -93,6 +90,7 @@ class Command(Expression):
             else:
                 converted_parts.append(part)
         self._tuple = tuple(converted_parts)
+        self._check = check
 
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
         # Explicit support for Path values.
@@ -101,6 +99,8 @@ class Command(Expression):
         status = subprocess.call(
             self._tuple, stdin=stdin_pipe, stdout=stdout_pipe,
             stderr=stderr_pipe, cwd=cwd, env=full_env)
+        if not self._check:
+            status = 0
         return status
 
     def __repr__(self):
@@ -137,23 +137,6 @@ class Then(CompoundExpression):
 
     def __repr__(self):
         return join_with_maybe_parens(self._left, self._right, ' && ', Pipe)
-
-
-class OrThen(CompoundExpression):
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
-        # Execute the first command.
-        left_status = self._left._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
-        # If it returns zero short-circuit.
-        if left_status == 0:
-            return left_status
-        # Otherwise ignore the error and execute the second command.
-        right_status = self._right._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
-        return right_status
-
-    def __repr__(self):
-        return join_with_maybe_parens(self._left, self._right, ' || ', Pipe)
 
 
 # Pipe uses another thread to run the left side of the pipe in parallel with
@@ -195,7 +178,7 @@ class Pipe(CompoundExpression):
 
     def __repr__(self):
         return join_with_maybe_parens(
-            self._left, self._right, ' | ', (Then, OrThen))
+            self._left, self._right, ' | ', Then)
 
 
 Result = collections.namedtuple('Result', ['status', 'stdout', 'stderr'])

@@ -26,9 +26,9 @@ out = (sh('cat /dev/zero')
 print('pipe:', out)
 
 out = (sh('echo -n hi')
-       .then('false')
+       .then('false', check=False)
        .pipe('sed', 's/hi/hee/')
-       .orthen('echo', 'haw')
+       .then('echo', 'haw')
        .read())
 print('and/or:', out)
 
