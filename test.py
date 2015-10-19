@@ -49,3 +49,6 @@ print('clear env:', out)
 
 out = cmd('sha1sum').read(stdin="foo")
 print('input:', out)
+
+out = sh('cd /tmp; echo $PWD').read()
+print('real shell commands:', out)

@@ -13,8 +13,8 @@ def cmd(prog, *args, **kwargs):
     return Command(prog, *args, **kwargs)
 
 
-def sh(s, **kwargs):
-    return cmd(*split_string_with_quotes(s, **kwargs))
+def sh(shell_cmd, **kwargs):
+    return Shell(shell_cmd, **kwargs)
 
 
 class Expression:
@@ -77,12 +77,35 @@ def command_or_parts(first, *rest, **kwargs):
     return Command(first, *rest, **kwargs)
 
 
-class Command(Expression):
-    def __init__(self, prog, *args, check=True):
+class CommandBase(Expression):
+    '''Base class for both Command (which takes a program name and a list of
+    arguments) and Shell (which takes a string and runs it with shell=True).
+    Handles shared options.'''
+    def __init__(self, check=True):
+        self._check = check
+
+    # for subclasses
+    def _run_subprocess():
+        raise NotImplementedError
+
+    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
+        # Explicit support for Path values.
+        if isinstance(cwd, pathlib.PurePath):
+            cwd = str(cwd)
+        status = self._run_subprocess(
+            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
+        if not self._check:
+            status = 0
+        return status
+
+
+class Command(CommandBase):
+    def __init__(self, prog, *args, **kwargs):
         '''The prog and args will be passed directly to subprocess.call(),
         which determines the types allowed here (strings and bytes). In
         addition, we also explicitly support pathlib Paths, by converting them
         to strings.'''
+        super().__init__(**kwargs)
         converted_parts = []
         for part in (prog,) + args:
             if isinstance(part, pathlib.PurePath):
@@ -90,17 +113,12 @@ class Command(Expression):
             else:
                 converted_parts.append(part)
         self._tuple = tuple(converted_parts)
-        self._check = check
 
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
-        # Explicit support for Path values.
-        if isinstance(cwd, pathlib.PurePath):
-            cwd = str(cwd)
+    def _run_subprocess(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd,
+                        full_env):
         status = subprocess.call(
             self._tuple, stdin=stdin_pipe, stdout=stdout_pipe,
             stderr=stderr_pipe, cwd=cwd, env=full_env)
-        if not self._check:
-            status = 0
         return status
 
     def __repr__(self):
@@ -114,6 +132,23 @@ class Command(Expression):
                 part = '"' + part + '"'
             quoted_parts.append(part)
         return ' '.join(quoted_parts)
+
+
+class Shell(CommandBase):
+    def __init__(self, shell_cmd, **kwargs):
+        super().__init__(**kwargs)
+        self._shell_cmd = shell_cmd
+
+    def _run_subprocess(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd,
+                        full_env):
+        status = subprocess.call(
+            self._shell_cmd, shell=True, stdin=stdin_pipe, stdout=stdout_pipe,
+            stderr=stderr_pipe, cwd=cwd, env=full_env)
+        return status
+
+    def __repr__(self):
+        # TODO: This should do some escaping.
+        return self._shell_cmd
 
 
 class CompoundExpression(Expression):
@@ -335,46 +370,6 @@ class InputWriter:
             self._thread.join()
         # Allow exceptions to propagate.
         return False
-
-
-def split_string_with_quotes(s):
-    words = []
-    word = ""
-    quote_starters = ("'", '"')
-    starter = None
-    for c in s:
-        # Are we in a quotation?
-        if starter is not None:
-            # Is this the end of the quotation?
-            if c == starter:
-                starter = None
-                # Note that we don't necessarily finish the word.
-            # The quotation's still going.
-            else:
-                word += c
-        # Are we starting a quotation?
-        elif c in quote_starters:
-            starter = c
-        # We're not in a quotation. Are we done with a word?
-        elif c.isspace():
-            # Add the finished word, if we were in the middle of one.
-            if word:
-                words.append(word)
-                word = ""
-        # We're in the middle of a word.
-        else:
-            word += c
-    # Make sure we didn't end with an unclosed quote.
-    if starter is not None:
-        raise SplitError("unclosed quote in: " + repr(s))
-    # Finally, add the last word if the string ended in the middle of one.
-    if word:
-        words.append(word)
-    return words
-
-
-class SplitError(Exception):
-    pass
 
 
 def update_env(parent, env, full_env):
