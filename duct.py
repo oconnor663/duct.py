@@ -20,9 +20,9 @@ def sh(shell_cmd, **kwargs):
 class Expression:
     'Abstract base class for all expression types.'
 
-    def run(self, stdin=None, stdout=None, stderr=None, check=True,
+    def run(self, input=None, stdout=None, stderr=None, check=True,
             trim=False, cwd=None, env=None, full_env=None):
-        return run(self, stdin, stdout, stderr, trim, check, cwd, env,
+        return run(self, input, stdout, stderr, trim, check, cwd, env,
                    full_env)
 
     def read(self, stdout=str, trim=True, **kwargs):
@@ -43,9 +43,9 @@ class Expression:
 # Set up any readers or writers, kick off the recurisve _exec(), and collect
 # the results. This is the core of the three execution methods: run(), read(),
 # and result().
-def run(expr, stdin, stdout, stderr, trim, check, cwd, env, full_env):
+def run(expr, input, stdout, stderr, trim, check, cwd, env, full_env):
     full_env = update_env(None, env, full_env)
-    stdin_writer = InputWriter(stdin)
+    stdin_writer = InputWriter(input)
     stdout_reader = OutputReader(stdout)
     stderr_reader = OutputReader(stderr)
     with stdin_writer as stdin_pipe, \

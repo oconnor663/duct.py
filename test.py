@@ -71,6 +71,5 @@ def test_full_env():
 
 
 def test_stdin():
-    # TODO: This parameter will change to be called "input".
-    out = cmd('sha1sum').read(stdin="foo")
+    out = cmd('sha1sum').read(input="foo")
     eq_('0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33  -', out)
