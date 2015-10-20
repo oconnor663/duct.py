@@ -81,8 +81,9 @@ class CommandBase(Expression):
     '''Base class for both Command (which takes a program name and a list of
     arguments) and Shell (which takes a string and runs it with shell=True).
     Handles shared options.'''
-    def __init__(self, check=True, env=None, full_env=None):
+    def __init__(self, check=True, cwd=None, env=None, full_env=None):
         self._check = check
+        self._cwd = cwd
         self._env = env
         self._full_env = full_env
 
@@ -91,6 +92,7 @@ class CommandBase(Expression):
         raise NotImplementedError
 
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
+        cwd = self._cwd or cwd
         # Explicit support for Path values.
         if isinstance(cwd, pathlib.PurePath):
             cwd = str(cwd)

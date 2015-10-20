@@ -52,3 +52,6 @@ print('input:', out)
 
 out = sh('cd /tmp; echo $foo', env={'foo': 'local env vars'}).read()
 print('real shell commands:', out)
+
+out = cmd('pwd', cwd='/tmp').read()
+print('local cwd:', out)
