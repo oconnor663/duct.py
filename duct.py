@@ -92,10 +92,8 @@ class CommandBase(Expression):
         raise NotImplementedError
 
     def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
-        cwd = self._cwd or cwd
-        # Explicit support for Path values.
-        if isinstance(cwd, pathlib.PurePath):
-            cwd = str(cwd)
+        # Support for Path values.
+        cwd = stringify_if_path(self._cwd or cwd)
         full_env = update_env(full_env, self._env, self._full_env)
         status = self._run_subprocess(
             stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
@@ -111,13 +109,7 @@ class Command(CommandBase):
         addition, we also explicitly support pathlib Paths, by converting them
         to strings.'''
         super().__init__(**kwargs)
-        converted_parts = []
-        for part in (prog,) + args:
-            if isinstance(part, pathlib.PurePath):
-                converted_parts.append(str(part))
-            else:
-                converted_parts.append(part)
-        self._tuple = tuple(converted_parts)
+        self._tuple = tuple(stringify_paths_in_list((prog,) + args))
 
     def _run_subprocess(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd,
                         full_env):
@@ -398,9 +390,22 @@ def update_env(parent, env, full_env):
     if full_env is not None:
         ret = full_env
 
-    # Explicit support for pathlib Paths.
-    for key, val in ret.items():
-        if isinstance(val, pathlib.PurePath):
-            ret[key] = str(val)
+    # Support for pathlib Paths.
+    ret = stringify_paths_in_dict(ret)
 
     return ret
+
+
+def stringify_if_path(x):
+    if isinstance(x, pathlib.PurePath):
+        return str(x)
+    return x
+
+
+def stringify_paths_in_list(l):
+    return [stringify_if_path(x) for x in l]
+
+
+def stringify_paths_in_dict(d):
+    return {stringify_if_path(key): stringify_if_path(val)
+            for key, val in d.items()}
