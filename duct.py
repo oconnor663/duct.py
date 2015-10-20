@@ -81,8 +81,10 @@ class CommandBase(Expression):
     '''Base class for both Command (which takes a program name and a list of
     arguments) and Shell (which takes a string and runs it with shell=True).
     Handles shared options.'''
-    def __init__(self, check=True):
+    def __init__(self, check=True, env=None, full_env=None):
         self._check = check
+        self._env = env
+        self._full_env = full_env
 
     # for subclasses
     def _run_subprocess():
@@ -92,6 +94,7 @@ class CommandBase(Expression):
         # Explicit support for Path values.
         if isinstance(cwd, pathlib.PurePath):
             cwd = str(cwd)
+        full_env = update_env(full_env, self._env, self._full_env)
         status = self._run_subprocess(
             stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
         if not self._check:
