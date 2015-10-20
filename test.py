@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env nosetests
 
 from duct import cmd, sh, CheckedError
 from pathlib import Path
