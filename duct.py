@@ -383,7 +383,7 @@ def update_env(parent, env, full_env):
     it's by far the most common use case), and the 'full_env' parameter to
     supply the entire environment. Callers shouldn't supply both in one place,
     but it's possible for parameters on individual commands to edit or override
-    what's given to run().'''
+    what's given to run(). We also convert pathlib Paths to strings.'''
     if env is not None and full_env is not None:
         raise ValueError(
             'Cannot specify both env and full_env at the same time.')
@@ -397,4 +397,10 @@ def update_env(parent, env, full_env):
         ret.update(env)
     if full_env is not None:
         ret = full_env
+
+    # Explicit support for pathlib Paths.
+    for key, val in ret.items():
+        if isinstance(val, pathlib.PurePath):
+            ret[key] = str(val)
+
     return ret

@@ -2,56 +2,75 @@
 
 from duct import cmd, sh, CheckedError
 from pathlib import Path
+from nose.tools import eq_, raises
 
-sh('echo hello world').run()
 
-out = sh('echo "some     stuff"').read()
-print('output: "{}"'.format(out))
+def test_hello_world():
+    out = sh('echo "hello  world"').read()
+    eq_("hello  world", out)
 
-out = sh('echo more stuff').run(stdout=str)
-print('result:', out)
 
-out = sh('head -c 10 /dev/urandom').read(stdout=bytes)
-print('random:', out)
+def test_result():
+    result = sh('echo more stuff').run(stdout=str)
+    eq_("more stuff\n", result.stdout)
 
-try:
-    cmd('bash', '-c', 'exit 42').run()
-except CheckedError as e:
-    print('error:', e)
 
-out = (sh('cat /dev/zero')
-       .pipe(sh('head -c 10'))
-       .pipe('cat', '-vet')
-       .read(check=False))
-print('pipe:', out)
+def test_bytes():
+    out = sh('head -c 10 /dev/zero').read(stdout=bytes)
+    eq_(b'\x00'*10, out)
 
-out = (sh('echo -n hi')
-       .then('false', check=False)
-       .pipe('sed', 's/hi/hee/')
-       .then('echo', 'haw')
-       .read())
-print('and/or:', out)
 
-out = (sh('echo moomoo')
-       .pipe(sh('head -c 3').pipe('sed', 's/o/a/g')
-             .then('sed', 's/o/e/g'))
-       .read())
-print('nesting:', out)
+@raises(CheckedError)
+def test_error():
+    cmd('false').run()
 
-out = cmd('pwd').read(cwd=Path('/tmp'))
-print('cd:', out)
 
-out = cmd('bash', '-c', 'echo "MYVAR=\'$MYVAR\'"').read(env={'MYVAR': 'foo'})
-print('setenv:', out)
+def test_check():
+    # Test both the top level and command level check params.
+    eq_(1, cmd('false').run(check=False).status)
+    eq_(0, cmd('false', check=False).run().status)
 
-out = cmd('bash', '-c', 'echo "HOME=\'$HOME\'"').read(full_env={})
-print('clear env:', out)
 
-out = cmd('sha1sum').read(stdin="foo")
-print('input:', out)
+def test_pipe():
+    out = sh('head -c 3 /dev/zero').pipe('sed', 's/./a/g').read()
+    eq_("aaa", out)
 
-out = sh('cd /tmp; echo $foo', env={'foo': 'local env vars'}).read()
-print('real shell commands:', out)
 
-out = cmd('pwd', cwd='/tmp').read()
-print('local cwd:', out)
+def test_then():
+    eq_('hi', cmd('true').then('echo', 'hi').read())
+    eq_('', cmd('false').then('echo', 'hi').read(check=False))
+
+
+def test_nesting():
+    innermost = cmd('true').then('cat')
+    middle = cmd('true').then(innermost)
+    out = sh('echo hi').pipe(middle).read()
+    eq_('hi', out)
+
+
+def test_cwd():
+    # Test cwd at both the top level and the command level, and that either can
+    # be a pathlib Path.
+    eq_('/tmp', cmd('pwd').read(cwd='/tmp'))
+    eq_('/tmp', cmd('pwd').read(cwd=Path('/tmp')))
+    eq_('/tmp', cmd('pwd', cwd='/tmp').read(cwd='/something/else'))
+    eq_('/tmp', cmd('pwd', cwd=Path('/tmp')).read(cwd='/something/else'))
+
+
+def test_env():
+    # Test env at both the top level and the command level, and that values can
+    # be pathlib Paths.
+    eq_("/", sh("bash -c 'echo $x'").read(env={'x': '/'}))
+    eq_("/", sh("bash -c 'echo $x'").read(env={'x': Path('/')}))
+    eq_("/", sh("bash -c 'echo $x'", env={'x': '/'}).read())
+    eq_("/", sh("bash -c 'echo $x'", env={'x': Path('/')}).read())
+
+
+def test_full_env():
+    eq_("", sh("bash -c 'echo $x'", full_env={}).read(env={'x': 'X'}))
+
+
+def test_stdin():
+    # TODO: This parameter will change to be called "input".
+    out = cmd('sha1sum').read(stdin="foo")
+    eq_('0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33  -', out)
