@@ -187,7 +187,7 @@ class Pipe(CompoundExpression):
         # its end of the pipe. Closing the write end allows the right side to
         # receive EOF, and closing the read end allows the left side to receive
         # SIGPIPE.
-        read_pipe, write_pipe = open_pipe(binary_mode=True)
+        read_pipe, write_pipe = open_pipe(binary=True)
 
         def do_left():
             with write_pipe:
@@ -239,9 +239,9 @@ def trim_if_string(x):
         return x
 
 
-def open_pipe(binary_mode):
+def open_pipe(binary=False):
     read_fd, write_fd = os.pipe()
-    read_mode, write_mode = ('rb', 'wb') if binary_mode else ('r', 'w')
+    read_mode, write_mode = ('rb', 'wb') if binary else ('r', 'w')
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
 
 
@@ -296,8 +296,8 @@ class OutputReader:
         if self._arg is str or self._arg is bytes:
             # The caller passed the str or bytes type (e.g. stdout=str).
             # Collect output into the corresponding type.
-            binary_mode = self._arg is bytes
-            self._read, self._write = open_pipe(binary_mode)
+            binary = self._arg is bytes
+            self._read, self._write = open_pipe(binary=binary)
             self._thread = ThreadWithReturn(self._read.read)
             self._thread.start()
             return self._write
@@ -340,8 +340,8 @@ class InputWriter:
             if not self._arg:
                 # Avoid spawning a thread for empty input.
                 return subprocess.DEVNULL
-            binary_mode = isinstance(self._arg, bytes)
-            self._read, self._write = open_pipe(binary_mode)
+            binary = isinstance(self._arg, bytes)
+            self._read, self._write = open_pipe(binary)
 
             # The writer thread must close the write end of the pipe itself, or
             # child processes that read stdin will hang waiting for EOF.
