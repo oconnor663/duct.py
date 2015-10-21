@@ -70,6 +70,6 @@ def test_full_env():
     eq_("", sh("bash -c 'echo $x'", full_env={}).read(env={'x': 'X'}))
 
 
-def test_stdin():
+def test_input():
     out = cmd('sha1sum').read(input="foo")
     eq_('0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33  -', out)
