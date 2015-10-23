@@ -138,6 +138,11 @@ def test_stdout():
     result = sh('echo hi 1>&2', stderr=STDOUT).run(stdout=bytes, stderr=bytes)
     eq_(b'hi\n', result.stdout)
     eq_(b'', result.stderr)
+    # full swap
+    result = (sh('echo hi; echo lo 1>&2', stdout=STDERR, stderr=STDOUT)
+              .run(stdout=str, stderr=str))
+    eq_('lo\n', result.stdout)
+    eq_('hi\n', result.stderr)
 
 
 def test_commands_can_be_paths():
