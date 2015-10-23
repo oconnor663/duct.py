@@ -1,4 +1,4 @@
-import collections
+from collections import namedtuple
 from contextlib import contextmanager
 import io
 import os
@@ -17,44 +17,42 @@ DEVNULL = -3
 STDERR = -4
 
 
-def cmd(prog, *args, **kwargs):
-    return Command(prog, *args, **kwargs)
+def cmd(prog, *args, check=True, **io_kwargs):
+    ioargs = make_ioargs(**io_kwargs)
+    return Command(prog, args, check, ioargs)
 
 
-def sh(shell_cmd, **kwargs):
-    return Shell(shell_cmd, **kwargs)
+def sh(shell_str, check=True, **io_kwargs):
+    ioargs = make_ioargs(**io_kwargs)
+    return Shell(shell_str, check, ioargs)
 
 
 class Expression:
     'Abstract base class for all expression types.'
 
-    def run(self, input=None, stdin=None, stdout=None, stderr=None, check=True,
-            trim=False, cwd=None, env=None, full_env=None):
-        return run(self, input, stdin, stdout, stderr, trim, check, cwd, env,
-                   full_env)
+    def run(self, check=True, trim=False, **io_kwargs):
+        ioargs = make_ioargs(**io_kwargs)
+        return run_expression(self, check, trim, ioargs)
 
-    def read(self, stdout=str, trim=True, **kwargs):
-        result = self.run(stdout=stdout, trim=trim, **kwargs)
+    def read(self, stdout=str, trim=True, **run_kwargs):
+        result = self.run(stdout=stdout, trim=trim, **run_kwargs)
         return result.stdout
 
-    def pipe(self, *cmd, **kwargs):
-        return Pipe(self, command_or_parts(*cmd, **kwargs))
+    def pipe(self, *cmd, **cmd_kwargs):
+        return Pipe(self, command_or_parts(*cmd, **cmd_kwargs))
 
-    def then(self, *cmd, **kwargs):
-        return Then(self, command_or_parts(*cmd, **kwargs))
+    def then(self, *cmd, **cmd_kwargs):
+        return Then(self, command_or_parts(*cmd, **cmd_kwargs))
 
 
 # Implementation Details
 # ======================
 
 # Set up any readers or writers, kick off the recurisve _exec(), and collect
-# the results. This is the core of the three execution methods: run(), read(),
-# and result().
-def run(expr, input, stdin, stdout, stderr, trim, check, cwd, env, full_env):
+# the results. This is the core of the execution methods, run() and read().
+def run_expression(expr, check, trim, ioargs):
     default_iocontext = IOContext()
-    iocontext_cm = default_iocontext.child_context(
-        input, stdin, stdout, stderr, cwd, env, full_env)
-    with iocontext_cm as iocontext:
+    with default_iocontext.child_context(ioargs) as iocontext:
         # Kick off the child processes.
         status = expr._exec(iocontext)
     stdout_result = iocontext.stdout_result()
@@ -71,28 +69,28 @@ def run(expr, input, stdin, stdout, stderr, trim, check, cwd, env, full_env):
 # Methods like pipe() take a command argument. This can either be arguments to
 # a Command constructor, or it can be an already-fully-formed command, like
 # another compount expression or the output of sh().
-def command_or_parts(first, *rest, **kwargs):
+def command_or_parts(first, *rest, **cmd_kwargs):
     if isinstance(first, Expression):
-        if rest or kwargs:
+        if rest or cmd_kwargs:
             raise TypeError("When an expression object is given, "
                             "no other arguments are allowed.")
         return first
-    return Command(first, *rest, **kwargs)
+    return cmd(first, *rest, **cmd_kwargs)
 
 
 class Command(Expression):
-    def __init__(self, prog, *args, check=True, **iokwargs):
+    def __init__(self, prog, args, check, ioargs):
         '''The prog and args will be passed directly to subprocess.call(),
         which determines the types allowed here (strings and bytes). In
         addition, we also explicitly support pathlib Paths, by converting them
         to strings.'''
         self._tuple = (prog,) + args
         self._check = check
-        self._iokwargs = iokwargs
+        self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
-        command = stringify_paths_in_list(self._tuple)
-        with parent_iocontext.child_context(**self._iokwargs) as iocontext:
+        with parent_iocontext.child_context(self._ioargs) as iocontext:
+            command = stringify_paths_in_list(self._tuple)
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
             status = subprocess.call(
@@ -115,24 +113,24 @@ class Command(Expression):
 
 
 class Shell(Expression):
-    def __init__(self, shell_cmd, check=True, **iokwargs):
-        self._shell_cmd = shell_cmd
+    def __init__(self, shell_str, check, ioargs):
+        self._shell_str = shell_str
         self._check = check
-        self._iokwargs = iokwargs
+        self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
-        with parent_iocontext.child_context(**self._iokwargs) as iocontext:
+        with parent_iocontext.child_context(self._ioargs) as iocontext:
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
             status = subprocess.call(
-                self._shell_cmd, shell=True, stdin=iocontext.stdin_pipe,
+                self._shell_str, shell=True, stdin=iocontext.stdin_pipe,
                 stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
                 cwd=cwd, env=full_env)
         return status if self._check else 0
 
     def __repr__(self):
         # TODO: This should do some escaping.
-        return self._shell_cmd
+        return self._shell_str
 
 
 class CompoundExpression(Expression):
@@ -175,13 +173,15 @@ class Pipe(CompoundExpression):
         read_pipe, write_pipe = open_pipe(binary=True)
 
         def do_left():
-            left_iocm = parent_iocontext.child_context(stdout=write_pipe)
+            left_ioargs = make_ioargs(stdout=write_pipe)
+            left_iocm = parent_iocontext.child_context(left_ioargs)
             with write_pipe, left_iocm as iocontext:
                 return self._left._exec(iocontext)
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
-        right_iocm = parent_iocontext.child_context(stdin=read_pipe)
+        right_ioargs = make_ioargs(stdin=read_pipe)
+        right_iocm = parent_iocontext.child_context(right_ioargs)
         with read_pipe, right_iocm as iocontext:
             right_status = self._right._exec(iocontext)
         left_status = left_thread.join()
@@ -198,7 +198,7 @@ class Pipe(CompoundExpression):
             self._left, self._right, ' | ', Then)
 
 
-Result = collections.namedtuple('Result', ['status', 'stdout', 'stderr'])
+Result = namedtuple('Result', ['status', 'stdout', 'stderr'])
 
 
 class CheckedError(subprocess.CalledProcessError):
@@ -266,6 +266,25 @@ class ThreadWithReturn(threading.Thread):
         return self._return
 
 
+_IOArgs = namedtuple('_IOArgs', ['input', 'stdin', 'stdout', 'stderr', 'cwd',
+                                 'env', 'full_env'])
+
+
+def make_ioargs(input=None, stdin=None, stdout=None, stderr=None, cwd=None,
+                env=None, full_env=None):
+    '''We define this constructor function so that we can do early error
+    checking on IO arguments. Other constructors can pass their keyword args
+    here as part of __init__, rather than holding them until _exec, so that
+    invalid keywords cause errors in the right place. This also lets us do some
+    consistency checks early, like prohibiting both input and stdin at the same
+    time.'''
+    if input is not None and stdin is not None:
+        raise ValueError('stdin and input arguments may not both be used.')
+    if env is not None and full_env is not None:
+        raise ValueError('env and full_env arguments may not both be used.')
+    return _IOArgs(input, stdin, stdout, stderr, cwd, env, full_env)
+
+
 class IOContext:
     '''Both run methods and individual expressions might need to open files or
     kick off IO threads, depending on the parameters given. This class both
@@ -298,16 +317,17 @@ class IOContext:
         return self._stderr_reader.join()
 
     @contextmanager
-    def child_context(
-            self, input=None, stdin=None, stdout=None, stderr=None, cwd=None,
-            env=None, full_env=None):
-        cwd = self.cwd if cwd is None else cwd
-        full_env = child_env(self.full_env, env, full_env)
-        stdin_cm = child_input_pipe(self.stdin_pipe, input, stdin)
+    def child_context(self, ioargs):
+        cwd = self.cwd if ioargs.cwd is None else ioargs.cwd
+        full_env = make_full_env(self.full_env, ioargs.env, ioargs.full_env)
+        stdin_cm = child_input_pipe(
+            self.stdin_pipe, ioargs.input, ioargs.stdin)
         stdout_cm = child_output_pipe(
-            self.stdout_pipe, self.stderr_pipe, self.stdout_pipe, stdout)
+            self.stdout_pipe, self.stderr_pipe, self.stdout_pipe,
+            ioargs.stdout)
         stderr_cm = child_output_pipe(
-            self.stdout_pipe, self.stderr_pipe, self.stderr_pipe, stderr)
+            self.stdout_pipe, self.stderr_pipe, self.stderr_pipe,
+            ioargs.stderr)
         with stdin_cm as stdin_pipe, \
                 stdout_cm as (stdout_pipe, stdout_reader), \
                 stderr_cm as (stderr_pipe, stderr_reader):
@@ -449,23 +469,18 @@ def spawn_output_reader(output_arg):
     thread.join()
 
 
-def child_env(parent_env, env, full_env):
+def make_full_env(parent_env, env, full_env):
     '''We support the 'env' parameter to add environment variables to the
     default environment (this differs from subprocess's standard behavior, but
     it's by far the most common use case), and the 'full_env' parameter to
     supply the entire environment. Callers shouldn't supply both in one place,
     but it's possible for parameters on individual commands to edit or override
     what's given to run(). We also convert pathlib Paths to strings.'''
-    if env is not None and full_env is not None:
-        raise ValueError(
-            'Cannot specify both env and full_env at the same time.')
+    if full_env is not None:
+        return full_env
     ret = os.environ.copy() if parent_env is None else parent_env.copy()
     if env is not None:
         ret.update(env)
-    if full_env is not None:
-        ret = full_env
-    # Support for pathlib Paths.
-    ret = stringify_paths_in_dict(ret)
     return ret
 
 
