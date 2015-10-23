@@ -304,8 +304,10 @@ class IOContext:
         cwd = self.cwd if cwd is None else cwd
         full_env = child_env(self.full_env, env, full_env)
         stdin_cm = child_input_pipe(self.stdin_pipe, input, stdin)
-        stdout_cm = child_output_pipe(self.stdout_pipe, stdout)
-        stderr_cm = child_output_pipe(self.stderr_pipe, stderr)
+        stdout_cm = child_output_pipe(
+            self.stdout_pipe, self.stderr_pipe, self.stdout_pipe, stdout)
+        stderr_cm = child_output_pipe(
+            self.stdout_pipe, self.stderr_pipe, self.stderr_pipe, stderr)
         with stdin_cm as stdin_pipe, \
                 stdout_cm as (stdout_pipe, stdout_reader), \
                 stderr_cm as (stderr_pipe, stderr_reader):
@@ -342,11 +344,13 @@ def child_input_pipe(parent_pipe, input_arg, stdin_arg):
 
 # Yields both a write pipe and an optional output reader thread.
 @contextmanager
-def child_output_pipe(parent_pipe, output_arg):
+def child_output_pipe(parent_stdout, parent_stderr, default_pipe, output_arg):
     if output_arg is None:
-        yield parent_pipe, None
+        yield default_pipe, None
     elif is_pipe_already(output_arg):
         yield output_arg, None
+    elif is_swap(output_arg):
+        yield get_swapped_pipe(parent_stdout, parent_stderr, output_arg), None
     elif is_devnull(output_arg):
         with open_devnull('w') as write:
             yield write, None
@@ -377,11 +381,11 @@ def is_swap(output_arg):
     return output_arg == STDOUT or output_arg == STDERR
 
 
-def get_swapped_pipe(current_stdout, current_stderr, output_arg):
+def get_swapped_pipe(parent_stdout, parent_stderr, output_arg):
     if output_arg == STDOUT:
-        return current_stdout
+        return parent_stdout
     if output_arg == STDERR:
-        return current_stderr
+        return parent_stderr
 
 
 def is_devnull(iovalue):
