@@ -1,8 +1,9 @@
 #! /usr/bin/env nosetests
 
-from duct import cmd, sh, CheckedError
+from duct import cmd, sh, CheckedError, DEVNULL
 from pathlib import Path
 from nose.tools import eq_, raises
+import tempfile
 
 
 def test_hello_world():
@@ -70,11 +71,6 @@ def test_full_env():
     eq_("", sh("bash -c 'echo $x'", full_env={}).read(env={'x': 'X'}))
 
 
-def test_input():
-    out = cmd('sha1sum').read(input="foo")
-    eq_('0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33  -', out)
-
-
 @raises(ValueError)
 def test_env_with_full_env_throws():
     # This should throw even before the command is run.
@@ -91,3 +87,28 @@ def test_input_with_stdin_throws():
 def test_undefined_keyword_throws():
     # This should throw even before the command is run.
     cmd("foo", junk_keyword=True)
+
+
+def test_input():
+    out = cmd('sha1sum').read(input="foo")
+    eq_('0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33  -', out)
+
+
+def test_stdin():
+    tempfd, temp = tempfile.mkstemp()
+    with open(tempfd, 'w') as f:
+        f.write('foo')
+    expected = '0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33  -'
+    # with a file path
+    out = cmd('sha1sum').read(stdin=temp)
+    eq_(expected, out)
+    # with a Path path
+    out = cmd('sha1sum').read(stdin=Path(temp))
+    eq_(expected, out)
+    # with an open file
+    with open(temp) as f:
+        out = cmd('sha1sum').read(stdin=f)
+        eq_(expected, out)
+    # with explicit DEVNULL
+    out = cmd('sha1sum').read(stdin=DEVNULL)
+    eq_('da39a3ee5e6b4b0d3255bfef95601890afd80709  -', out)
