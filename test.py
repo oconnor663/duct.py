@@ -114,6 +114,24 @@ def test_stdin():
     eq_('da39a3ee5e6b4b0d3255bfef95601890afd80709  -', out)
 
 
+def test_stdout():
+    # with a file path
+    with tempfile.NamedTemporaryFile() as temp:
+        sh('echo hi').run(stdout=temp.name)
+        eq_('hi\n', open(temp.name).read())
+    # with a Path path
+    with tempfile.NamedTemporaryFile() as temp:
+        sh('echo hi').run(stdout=Path(temp.name))
+        eq_('hi\n', open(temp.name).read())
+    # with an open file
+    with tempfile.NamedTemporaryFile() as temp:
+        sh('echo hi').run(stdout=temp)
+        eq_('hi\n', open(temp.name).read())
+    # with explicit DEVNULL
+    out = sh('echo hi', stdout=DEVNULL).read()
+    eq_('', out)
+
+
 def test_commands_can_be_paths():
     echo = Path('/bin/echo')
     eq_('foo', cmd(echo, 'foo').read())
