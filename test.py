@@ -112,3 +112,9 @@ def test_stdin():
     # with explicit DEVNULL
     out = cmd('sha1sum').read(stdin=DEVNULL)
     eq_('da39a3ee5e6b4b0d3255bfef95601890afd80709  -', out)
+
+
+def test_commands_can_be_paths():
+    echo = Path('/bin/echo')
+    eq_('foo', cmd(echo, 'foo').read())
+    eq_('\n', sh(echo).read(trim=False))

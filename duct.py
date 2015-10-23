@@ -113,24 +113,27 @@ class Command(Expression):
 
 
 class Shell(Expression):
-    def __init__(self, shell_str, check, ioargs):
-        self._shell_str = shell_str
+    def __init__(self, shell_cmd, check, ioargs):
+        # The command could be a Path. This is potentially useful on Windows
+        # where you have to run things like .py files in shell mode.
+        self._shell_cmd = shell_cmd
         self._check = check
         self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
         with parent_iocontext.child_context(self._ioargs) as iocontext:
+            shell_str = stringify_if_path(self._shell_cmd)
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
             status = subprocess.call(
-                self._shell_str, shell=True, stdin=iocontext.stdin_pipe,
+                shell_str, shell=True, stdin=iocontext.stdin_pipe,
                 stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
                 cwd=cwd, env=full_env)
         return status if self._check else 0
 
     def __repr__(self):
         # TODO: This should do some escaping.
-        return self._shell_str
+        return str(self._shell_cmd)
 
 
 class CompoundExpression(Expression):
