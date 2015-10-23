@@ -21,7 +21,7 @@ def test_bytes():
 
 
 @raises(CheckedError)
-def test_error():
+def test_nonzero_status_throws():
     cmd('false').run()
 
 
@@ -73,3 +73,21 @@ def test_full_env():
 def test_input():
     out = cmd('sha1sum').read(input="foo")
     eq_('0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33  -', out)
+
+
+@raises(ValueError)
+def test_env_with_full_env_throws():
+    # This should throw even before the command is run.
+    cmd("foo", env={}, full_env={})
+
+
+@raises(ValueError)
+def test_input_with_stdin_throws():
+    # This should throw even before the command is run.
+    cmd("foo", input="foo", stdin="foo")
+
+
+@raises(TypeError)
+def test_undefined_keyword_throws():
+    # This should throw even before the command is run.
+    cmd("foo", junk_keyword=True)
