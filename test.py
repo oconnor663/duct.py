@@ -1,6 +1,6 @@
 #! /usr/bin/env nosetests
 
-from duct import cmd, sh, CheckedError, DEVNULL
+from duct import cmd, sh, CheckedError, DEVNULL, STDERR
 from pathlib import Path
 from nose.tools import eq_, raises
 import tempfile
@@ -130,6 +130,10 @@ def test_stdout():
     # with explicit DEVNULL
     out = sh('echo hi', stdout=DEVNULL).read()
     eq_('', out)
+    # to STDERR, with str
+    result = sh('echo hi', stdout=STDERR).run(stdout=str, stderr=str)
+    eq_('', result.stdout)
+    eq_('hi\n', result.stderr)
 
 
 def test_commands_can_be_paths():
