@@ -302,6 +302,10 @@ class IOContext:
         self.stderr_pipe = stderr_pipe
         self.cwd = cwd
         self.full_env = full_env
+        # The two reader members are threads. After an IOContext is exited
+        # (that is, after the close of the with-block that starts it),
+        # stdout_result() and stderr_result() expose the values returned by
+        # these threads.
         self._stdout_reader = stdout_reader
         self._stderr_reader = stderr_reader
 
@@ -321,6 +325,13 @@ class IOContext:
 
     @contextmanager
     def child_context(self, ioargs):
+        '''This is the top level context manager for any files we open or
+        threads we spawn. This is used both when we kick off execution of a
+        whole expression, and when individual parts of that expression
+        interpret their IO arguments. Values like None and STDOUT are
+        interpreted relative to the parent context (that is, self). The either
+        the new child context gets passed to subexpressions, or the pipes it
+        holds are used to execute a real command.'''
         cwd = self.cwd if ioargs.cwd is None else ioargs.cwd
         full_env = make_full_env(self.full_env, ioargs.env, ioargs.full_env)
         stdin_cm = child_input_pipe(
