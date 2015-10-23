@@ -1,4 +1,6 @@
 import collections
+from contextlib import contextmanager
+import io
 import os
 import pathlib
 import re
@@ -49,17 +51,17 @@ class Expression:
 # the results. This is the core of the three execution methods: run(), read(),
 # and result().
 def run(expr, input, stdin, stdout, stderr, trim, check, cwd, env, full_env):
-    full_env = update_env(None, env, full_env)
-    iocontext = IOContext(None, None, None, input, stdin, stdout, stderr)
-    with iocontext as (stdin_pipe, stdout_pipe, stderr_pipe):
+    default_iocontext = IOContext()
+    iocontext_cm = default_iocontext.child_context(
+        input, stdin, stdout, stderr, cwd, env, full_env)
+    with iocontext_cm as iocontext:
         # Kick off the child processes.
-        status = expr._exec(stdin_pipe, stdout_pipe, stderr_pipe, cwd,
-                            full_env)
-    stdout_result = iocontext.stdout_result
-    stderr_result = iocontext.stderr_result
+        status = expr._exec(iocontext)
+    stdout_result = iocontext.stdout_result()
+    stderr_result = iocontext.stderr_result()
     if trim:
-        stdout_result = trim_if_string(iocontext.stdout_result)
-        stderr_result = trim_if_string(iocontext.stderr_result)
+        stdout_result = trim_if_string(stdout_result)
+        stderr_result = trim_if_string(stderr_result)
     result = Result(status, stdout_result, stderr_result)
     if check and status != 0:
         raise CheckedError(result, expr)
@@ -78,46 +80,26 @@ def command_or_parts(first, *rest, **kwargs):
     return Command(first, *rest, **kwargs)
 
 
-class CommandBase(Expression):
-    '''Base class for both Command (which takes a program name and a list of
-    arguments) and Shell (which takes a string and runs it with shell=True).
-    Handles shared options.'''
-    def __init__(self, check=True, cwd=None, env=None, full_env=None):
-        self._check = check
-        self._cwd = cwd
-        self._env = env
-        self._full_env = full_env
-
-    # for subclasses
-    def _run_subprocess():
-        raise NotImplementedError
-
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
-        # Support for Path values.
-        cwd = stringify_if_path(self._cwd or cwd)
-        full_env = update_env(full_env, self._env, self._full_env)
-        status = self._run_subprocess(
-            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
-        if not self._check:
-            status = 0
-        return status
-
-
-class Command(CommandBase):
-    def __init__(self, prog, *args, **kwargs):
+class Command(Expression):
+    def __init__(self, prog, *args, check=True, **iokwargs):
         '''The prog and args will be passed directly to subprocess.call(),
         which determines the types allowed here (strings and bytes). In
         addition, we also explicitly support pathlib Paths, by converting them
         to strings.'''
-        super().__init__(**kwargs)
-        self._tuple = tuple(stringify_paths_in_list((prog,) + args))
+        self._tuple = (prog,) + args
+        self._check = check
+        self._iokwargs = iokwargs
 
-    def _run_subprocess(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd,
-                        full_env):
-        status = subprocess.call(
-            self._tuple, stdin=stdin_pipe, stdout=stdout_pipe,
-            stderr=stderr_pipe, cwd=cwd, env=full_env)
-        return status
+    def _exec(self, parent_iocontext):
+        command = stringify_paths_in_list(self._tuple)
+        with parent_iocontext.child_context(**self._iokwargs) as iocontext:
+            cwd = stringify_if_path(iocontext.cwd)
+            full_env = stringify_paths_in_dict(iocontext.full_env)
+            status = subprocess.call(
+                command, stdin=iocontext.stdin_pipe,
+                stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
+                cwd=cwd, env=full_env)
+        return status if self._check else 0
 
     def __repr__(self):
         quoted_parts = []
@@ -132,17 +114,21 @@ class Command(CommandBase):
         return ' '.join(quoted_parts)
 
 
-class Shell(CommandBase):
-    def __init__(self, shell_cmd, **kwargs):
-        super().__init__(**kwargs)
+class Shell(Expression):
+    def __init__(self, shell_cmd, check=True, **iokwargs):
         self._shell_cmd = shell_cmd
+        self._check = check
+        self._iokwargs = iokwargs
 
-    def _run_subprocess(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd,
-                        full_env):
-        status = subprocess.call(
-            self._shell_cmd, shell=True, stdin=stdin_pipe, stdout=stdout_pipe,
-            stderr=stderr_pipe, cwd=cwd, env=full_env)
-        return status
+    def _exec(self, parent_iocontext):
+        with parent_iocontext.child_context(**self._iokwargs) as iocontext:
+            cwd = stringify_if_path(iocontext.cwd)
+            full_env = stringify_paths_in_dict(iocontext.full_env)
+            status = subprocess.call(
+                self._shell_cmd, shell=True, stdin=iocontext.stdin_pipe,
+                stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
+                cwd=cwd, env=full_env)
+        return status if self._check else 0
 
     def __repr__(self):
         # TODO: This should do some escaping.
@@ -156,16 +142,14 @@ class CompoundExpression(Expression):
 
 
 class Then(CompoundExpression):
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
+    def _exec(self, parent_iocontext):
         # Execute the first command.
-        left_status = self._left._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
+        left_status = self._left._exec(parent_iocontext)
         # If it returns non-zero short-circuit.
         if left_status != 0:
             return left_status
         # Otherwise execute the second command.
-        right_status = self._right._exec(
-            stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
+        right_status = self._right._exec(parent_iocontext)
         return right_status
 
     def __repr__(self):
@@ -180,7 +164,7 @@ class Then(CompoundExpression):
 # those can conflict with other listeners that might by in the same process,
 # and they won't work on Windows anyway.
 class Pipe(CompoundExpression):
-    def _exec(self, stdin_pipe, stdout_pipe, stderr_pipe, cwd, full_env):
+    def _exec(self, parent_iocontext):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
         # side could be a compound expression (like A.then(B)), so we have to
@@ -191,15 +175,15 @@ class Pipe(CompoundExpression):
         read_pipe, write_pipe = open_pipe(binary=True)
 
         def do_left():
-            with write_pipe:
-                return self._left._exec(
-                    stdin_pipe, write_pipe, stderr_pipe, cwd, full_env)
+            left_iocm = parent_iocontext.child_context(stdout=write_pipe)
+            with write_pipe, left_iocm as iocontext:
+                return self._left._exec(iocontext)
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
-        with read_pipe:
-            right_status = self._right._exec(
-                read_pipe, stdout_pipe, stderr_pipe, cwd, full_env)
+        right_iocm = parent_iocontext.child_context(stdin=read_pipe)
+        with read_pipe, right_iocm as iocontext:
+            right_status = self._right._exec(iocontext)
         left_status = left_thread.join()
 
         # Return the rightmost error, if any. Note that cwd and env changes
@@ -288,120 +272,180 @@ class IOContext:
     interprets IO parameters and acts as a context manager for the resources it
     opens.'''
 
-    def __init__(self, stdin_pipe, stdout_pipe, stderr_pipe, input, stdin,
-                 stdout, stderr):
-        '''The pipe arguments are the defaults at the current point in an
-        expression. In the run methods, they're given as None, which means (as
-        per subprocess) the descriptors inherited from the parent process. In
-        nested expressions, these might also reflect changes made by containing
-        expressions. These are ultimately passed to subprocess.Popen(), so they
-        should be either None or a file/descriptor.
+    def __init__(self, stdin_pipe=None, stdout_pipe=None, stdout_reader=None,
+                 stderr_pipe=None, stderr_reader=None, cwd=None,
+                 full_env=None):
+        self.stdin_pipe = stdin_pipe
+        self.stdout_pipe = stdout_pipe
+        self.stderr_pipe = stderr_pipe
+        self.cwd = cwd
+        self.full_env = full_env
+        self._stdout_reader = stdout_reader
+        self._stderr_reader = stderr_reader
 
-        The rest of the arguments are the named parameters given for the
-        current expression. Pathlib Paths or strings are interpreted as
-        filepaths and opened in the appropriate mode. The `str` and `bytes`
-        types kick off an output pipe and a reader thread, and a string or
-        bytes value given as `input` kicks off an input pipe and a writer
-        thread. DEVNULL is handled by opening os.devnull (because Python 2's
-        subprocess doesn't support that flag directly), and the STDOUT and
-        STDERR flags refer to the default pipes above.'''
+    def stdout_result(self):
+        if self._stdout_reader is None:
+            return None
+        if self._stdout_reader.is_alive():
+            raise RuntimeError("The stdout reader is still alive.")
+        return self._stdout_reader.join()
 
-        if input is not None and stdin is not None:
-            raise ValueError('stdin and input arguments may not both be used.')
+    def stderr_result(self):
+        if self._stderr_reader is None:
+            return None
+        if self._stderr_reader.is_alive():
+            raise RuntimeError("The stderr reader is still alive.")
+        return self._stderr_reader.join()
 
-        self._stdin_pipe = stdin_pipe
-        self._stdout_pipe = stdout_pipe
-        self._stderr_pipe = stderr_pipe
-        self._input = input
-        self._stdin = stdin
-        self._stdout = stdout
-        self._stderr = stderr
-
-        self._enter_pipes = [stdin_pipe, stdout_pipe, stderr_pipe]
-        self._open_files = []
-        self._running_threads = []
-
-        self.stdout_result = None
-        self.stderr_result = None
-
-    def __enter__(self):
-        # TODO: Handle exceptions that happen in here, like opening nonexistent
-        # filepaths.
-        self._handle_STDOUT_STDERR()
-        self._handle_DEVNULL()
-        self._handle_paths()
-        self._handle_input_writer()
-        self._handle_output_readers()
-        return tuple(self._enter_pipes)
-
-    def _handle_STDOUT_STDERR(self):
-        # Note that stdout=STDOUT and stderr=STDERR are no-ops.
-        if self._stdout == STDERR:
-            self._enter_pipes[1] = self._setderr_pipe
-        if self._stderr == STDOUT:
-            self._enter_pipes[2] = self._stdout_pipe
-
-    def _handle_DEVNULL(self):
-        # We do this because Python 2 doesn't support DEVNULL natively.
-        for param, pipe_index in \
-                ((self._stdin, 0), (self._stdout, 1), (self._stderr, 2)):
-            if param == DEVNULL:
-                f = open(os.devnull, 'r' if pipe_index == 0 else 'w')
-                self._open_files.append(f)
-                self._enter_pipes[pipe_index] = f
-
-    def _handle_paths(self):
-        for param, pipe_index in \
-                ((self._stdin, 0), (self._stdout, 1), (self._stderr, 2)):
-            maybe_path = stringify_if_path(param)
-            if isinstance(maybe_path, (str, bytes)):
-                f = open(maybe_path, 'r' if pipe_index == 0 else 'w')
-                self._open_files.append(f)
-                self._enter_pipes[pipe_index] = f
-
-    def _handle_input_writer(self):
-        if self._input is None:
-            return
-        read, write = open_pipe(binary=isinstance(self._input, bytes))
-
-        def write_thread():
-            with write:
-                write.write(self._input)
-
-        thread = ThreadWithReturn(write_thread)
-        thread.start()
-        self._running_threads.append(thread)
-        self._open_files.append(read)
-        self._enter_pipes[0] = read
-
-    def _handle_output_readers(self):
-        for param, pipe_index, attr in ((self._stdout, 1, "stdout_result"),
-                                        (self._stderr, 2, "stderr_result")):
-            if param in (str, bytes):
-                read, write = open_pipe(binary=param is bytes)
-
-                def read_thread():
-                    with read:
-                        setattr(self, attr, read.read())
-
-                thread = ThreadWithReturn(read_thread)
-                thread.start()
-                self._running_threads.append(thread)
-                self._open_files.append(write)
-                self._enter_pipes[pipe_index] = write
-
-    def __exit__(self, *args):
-        # We have to close files before we join threads, because e.g. reader
-        # threads won't receive EOF until we close the write end of their pipe.
-        # TODO: Handle exceptions that might occur in here, like in closing a
-        # file.
-        for f in self._open_files:
-            f.close()
-        for t in self._running_threads:
-            t.join()
+    @contextmanager
+    def child_context(
+            self, input=None, stdin=None, stdout=None, stderr=None, cwd=None,
+            env=None, full_env=None):
+        cwd = self.cwd if cwd is None else cwd
+        full_env = child_env(self.full_env, env, full_env)
+        stdin_cm = child_input_pipe(self.stdin_pipe, input, stdin)
+        stdout_cm = child_output_pipe(self.stdout_pipe, stdout)
+        stderr_cm = child_output_pipe(self.stderr_pipe, stderr)
+        with stdin_cm as stdin_pipe, \
+                stdout_cm as (stdout_pipe, stdout_reader), \
+                stderr_cm as (stderr_pipe, stderr_reader):
+            yield IOContext(stdin_pipe, stdout_pipe, stdout_reader,
+                            stderr_pipe, stderr_reader, cwd, full_env)
 
 
-def update_env(parent, env, full_env):
+# Yields a read pipe.
+@contextmanager
+def child_input_pipe(parent_pipe, input_arg, stdin_arg):
+    # Check the input parameter first, because stdin will be None if input is
+    # set, and we don't want to short circuit. (None is an otherwise valid
+    # stdin value, meaning "inherit the current context's stdin".)
+    if input_arg is not None and stdin_arg is not None:
+        raise ValueError('stdin and input arguments may not both be used.')
+    elif wants_input_writer(input_arg):
+        with spawn_input_writer(input_arg) as read:
+            yield read
+    elif input_arg is not None:
+        raise TypeError("Not a valid input parameter: " + repr(input_arg))
+    elif stdin_arg is None:
+        yield parent_pipe
+    elif is_pipe_already(stdin_arg):
+        yield stdin_arg
+    elif is_devnull(stdin_arg):
+        with open_devnull('r') as read:
+            yield read
+    elif is_path(stdin_arg):
+        with open_path(stdin_arg, 'r') as read:
+            yield read
+    else:
+        raise TypeError("Not a valid stdin parameter: " + repr(stdin_arg))
+
+
+# Yields both a write pipe and an optional output reader thread.
+@contextmanager
+def child_output_pipe(parent_pipe, output_arg):
+    if output_arg is None:
+        yield parent_pipe, None
+    elif is_pipe_already(output_arg):
+        yield output_arg, None
+    elif is_devnull(output_arg):
+        with open_devnull('w') as write:
+            yield write, None
+    elif is_path(output_arg):
+        with open_path(output_arg, 'w') as write:
+            yield write, None
+    elif wants_output_reader(output_arg):
+        with spawn_output_reader(output_arg) as (write, thread):
+            yield write, thread
+    else:
+        raise TypeError("Not a valid output parameter: " + repr(output_arg))
+
+
+def is_pipe_already(iovalue):
+    # For files and file descriptors, we'll pass them directly to the
+    # subprocess module.
+    try:
+        # See if the value has a fileno. Non-file buffers like StringIO have
+        # the fileno method but throw UnsupportedOperation.
+        iovalue.fileno()
+        return True
+    except (AttributeError, io.UnsupportedOperation):
+        # If there's no fileno, also accept integer file descriptors.
+        return isinstance(iovalue, int) and iovalue >= 0
+
+
+def is_swap(output_arg):
+    return output_arg == STDOUT or output_arg == STDERR
+
+
+def get_swapped_pipe(current_stdout, current_stderr, output_arg):
+    if output_arg == STDOUT:
+        return current_stdout
+    if output_arg == STDERR:
+        return current_stderr
+
+
+def is_devnull(iovalue):
+    return iovalue == DEVNULL
+
+
+@contextmanager
+def open_devnull(mode):
+    # We open devnull ourselves because Python 2 doesn't support DEVNULL.
+    with open(os.devnull, mode) as f:
+        yield f
+
+
+def is_path(iovalue):
+    return isinstance(iovalue, (str, bytes, pathlib.PurePath))
+
+
+@contextmanager
+def open_path(iovalue, mode):
+    with open(stringify_if_path(iovalue), mode) as f:
+        yield f
+
+
+def wants_input_writer(input_arg):
+    return isinstance(input_arg, (str, bytes))
+
+
+@contextmanager
+def spawn_input_writer(input_arg):
+    read, write = open_pipe(binary=isinstance(input_arg, bytes))
+
+    def write_thread():
+        with write:
+            write.write(input_arg)
+    # Nothing ever needs to join this thread. It terminates either when it's
+    # done writing, or when its pipe closes.
+    thread = ThreadWithReturn(write_thread)
+    thread.start()
+    with read:
+        yield read
+    thread.join()
+
+
+def wants_output_reader(output_arg):
+    return output_arg is str or output_arg is bytes
+
+
+@contextmanager
+def spawn_output_reader(output_arg):
+    read, write = open_pipe(binary=output_arg is bytes)
+
+    def read_thread():
+        with read:
+            return read.read()
+    thread = ThreadWithReturn(read_thread)
+    thread.start()
+    with write:
+        # We yield the thread too, so that the caller can get the str/bytes
+        # iovalue it collects.
+        yield write, thread
+    thread.join()
+
+
+def child_env(parent_env, env, full_env):
     '''We support the 'env' parameter to add environment variables to the
     default environment (this differs from subprocess's standard behavior, but
     it's by far the most common use case), and the 'full_env' parameter to
@@ -411,20 +455,13 @@ def update_env(parent, env, full_env):
     if env is not None and full_env is not None:
         raise ValueError(
             'Cannot specify both env and full_env at the same time.')
-
-    if parent is None:
-        ret = os.environ.copy()
-    else:
-        ret = parent.copy()
-
+    ret = os.environ.copy() if parent_env is None else parent_env.copy()
     if env is not None:
         ret.update(env)
     if full_env is not None:
         ret = full_env
-
     # Support for pathlib Paths.
     ret = stringify_paths_in_dict(ret)
-
     return ret
 
 
