@@ -137,12 +137,27 @@ class Shell(Expression):
 
 
 class CompoundExpression(Expression):
+    # subclasses must override this
+    _repr_divider = None
+
     def __init__(self, left, right):
         self._left = left
         self._right = right
 
+    def __repr__(self):
+        parts = []
+        for part in (self._left, self._right):
+            if (isinstance(part, CompoundExpression) and
+                    not isinstance(part, self.__class__)):
+                parts.append('(' + repr(part) + ')')
+            else:
+                parts.append(repr(part))
+        return self._repr_divider.join(parts)
+
 
 class Then(CompoundExpression):
+    _repr_divider = ' && '
+
     def _exec(self, parent_iocontext):
         # Execute the first command.
         left_status = self._left._exec(parent_iocontext)
@@ -153,9 +168,6 @@ class Then(CompoundExpression):
         right_status = self._right._exec(parent_iocontext)
         return right_status
 
-    def __repr__(self):
-        return join_with_maybe_parens(self._left, self._right, ' && ', Pipe)
-
 
 # Pipe uses another thread to run the left side of the pipe in parallel with
 # the right. This is required because both the left and the right might be
@@ -165,6 +177,8 @@ class Then(CompoundExpression):
 # those can conflict with other listeners that might by in the same process,
 # and they won't work on Windows anyway.
 class Pipe(CompoundExpression):
+    _repr_divider = ' || '
+
     def _exec(self, parent_iocontext):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
@@ -195,10 +209,6 @@ class Pipe(CompoundExpression):
             return right_status
         else:
             return left_status
-
-    def __repr__(self):
-        return join_with_maybe_parens(
-            self._left, self._right, ' | ', Then)
 
 
 Result = namedtuple('Result', ['status', 'stdout', 'stderr'])
@@ -231,16 +241,6 @@ def open_pipe(binary=False):
     read_fd, write_fd = os.pipe()
     read_mode, write_mode = ('rb', 'wb') if binary else ('r', 'w')
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
-
-
-def join_with_maybe_parens(left, right, joiner, paren_types):
-    parts = []
-    for part in (left, right):
-        if isinstance(part, paren_types):
-            parts.append('(' + repr(part) + ')')
-        else:
-            parts.append(repr(part))
-    return joiner.join(parts)
 
 
 class ThreadWithReturn(threading.Thread):
