@@ -31,10 +31,43 @@ class Expression:
     'Abstract base class for all expression types.'
 
     def run(self, check=True, trim=False, **io_kwargs):
+        '''Start running an expression, wait for it to finish, and return a
+        Result. This takes a number of arguments:
+
+        input: A string or bytes object to write directly to the expression's
+               standard input. A thread is spawned to handle this.
+        stdin: Directly set the expression's stdin pipe. Incompatible with
+               "input". Can be a file object, a file descriptor, a filepath as
+               a string or Path, or DEVNULL.
+        stdout: Similar to stdin. Supports STDERR. Setting stdout=str or
+                stdout=bytes means capturing stdout as the appropriate type and
+                returning is as result.stdout. A read thread is spawned to
+                handle this.
+        stderr: Similar to stdout. Supports STDOUT. Setting stderr=str or
+                stderr=bytes causes the captured output to wind up on
+                result.stderr.
+        cwd: The working directory where the expression runs.
+        env: A map of environment variables ({name: value}) that should be set
+             before the expression is run. Note that this is *in addition* to
+             what's in os.environ, unlike the "env" parameter from the
+             subprocess module.
+        full_env: The complete map of environment variables with which to
+                  execute the expression, which is not merged with os.environ.
+                  This is what the subprocess module refers to as "env".
+        check: If False, return nonzero exit statuses as result.status, instead
+               of throwing an exception.
+        trim: If True, trim trailing newlines from output captured by
+              stdout=str or stderr=str. This is the same behavior as in bash's
+              backticks or $(). Note that this never applies to output captured
+              as bytes.
+        '''
         ioargs = make_ioargs(**io_kwargs)
         return run_expression(self, check, trim, ioargs)
 
     def read(self, stdout=str, trim=True, **run_kwargs):
+        '''Captures output from an expression, similar to backticks or $() in
+        the shell. This is just a wrapper around run(), which sets stdout=str
+        and trim=True, and then returns result.stdout instead of result.'''
         result = self.run(stdout=stdout, trim=trim, **run_kwargs)
         return result.stdout
 
