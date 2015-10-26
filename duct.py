@@ -251,7 +251,7 @@ class CheckedError(subprocess.CalledProcessError):
         self.command = command
 
     def __str__(self):
-        return 'Command "{}" returned non-zero exit status {}.'.format(
+        return 'Command "{0}" returned non-zero exit status {1}.'.format(
             self.command, self.result.status)
 
 
