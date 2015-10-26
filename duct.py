@@ -144,7 +144,7 @@ class Command(Expression):
             status = subprocess.call(
                 command, stdin=iocontext.stdin_pipe,
                 stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
-                cwd=cwd, env=full_env)
+                cwd=cwd, env=full_env, close_fds=should_close_fds())
         return status if self._check else 0
 
 
@@ -164,7 +164,7 @@ class ShellCommand(Expression):
             status = subprocess.call(
                 shell_str, shell=True, stdin=iocontext.stdin_pipe,
                 stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
-                cwd=cwd, env=full_env)
+                cwd=cwd, env=full_env, close_fds=should_close_fds())
         return status if self._check else 0
 
 
@@ -550,3 +550,15 @@ def stringify_paths_in_list(l):
 def stringify_paths_in_dict(d):
     return dict((stringify_if_path(key), stringify_if_path(val))
                 for key, val in d.items())
+
+
+def should_close_fds():
+    # This was fun to debug >.< Before Python 3.2 on POSIX systems, os.pipe()
+    # fd's are inheritable. So for example in `echo hi | cat`, cat might
+    # receive a write handle for its own stdin, which means it will never read
+    # EOF, and the command will hang forever. The fix for this is the close_fds
+    # flag in the subprocess module. But we have to be careful not to set that
+    # flag on Windows, because it's not allowed with non-None
+    # stdin/stdout/stderr values. Luckily pipes were never inheritable on
+    # Windows.
+    return os.name != 'nt'
