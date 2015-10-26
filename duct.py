@@ -174,13 +174,11 @@ class Subshell(Expression):
         return status if self._check else 0
 
 
-class CompoundExpression(Expression):
+class Then(Expression):
     def __init__(self, left, right):
         self._left = left
         self._right = right
 
-
-class Then(CompoundExpression):
     def _exec(self, parent_iocontext):
         # Execute the first command.
         left_status = self._left._exec(parent_iocontext)
@@ -199,7 +197,11 @@ class Then(CompoundExpression):
 # time. There are Unix-specific ways to wait on multiple processes at once, but
 # those can conflict with other listeners that might by in the same process,
 # and they won't work on Windows anyway.
-class Pipe(CompoundExpression):
+class Pipe(Expression):
+    def __init__(self, left, right):
+        self._left = left
+        self._right = right
+
     def _exec(self, parent_iocontext):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
