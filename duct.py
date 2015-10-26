@@ -215,15 +215,17 @@ class Pipe(Expression):
         def do_left():
             _, left_ioargs = parse_cmd_kwargs(stdout=write_pipe)
             left_iocm = parent_iocontext.child_context(left_ioargs)
-            with write_pipe, left_iocm as iocontext:
-                return self._left._exec(iocontext)
+            with write_pipe:
+                with left_iocm as iocontext:
+                    return self._left._exec(iocontext)
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
         _, right_ioargs = parse_cmd_kwargs(stdin=read_pipe)
         right_iocm = parent_iocontext.child_context(right_ioargs)
-        with read_pipe, right_iocm as iocontext:
-            right_status = self._right._exec(iocontext)
+        with read_pipe:
+            with right_iocm as iocontext:
+                right_status = self._right._exec(iocontext)
         left_status = left_thread.join()
 
         # Return the rightmost error, if any. Note that cwd and env changes
@@ -375,11 +377,11 @@ class IOContext:
         stderr_cm = child_output_pipe(
             self.stdout_pipe, self.stderr_pipe, self.stderr_pipe,
             ioargs.stderr)
-        with stdin_cm as stdin_pipe, \
-                stdout_cm as (stdout_pipe, stdout_reader), \
-                stderr_cm as (stderr_pipe, stderr_reader):
-            yield IOContext(stdin_pipe, stdout_pipe, stdout_reader,
-                            stderr_pipe, stderr_reader, cwd, full_env)
+        with stdin_cm as stdin_pipe:
+            with stdout_cm as (stdout_pipe, stdout_reader):
+                with stderr_cm as (stderr_pipe, stderr_reader):
+                    yield IOContext(stdin_pipe, stdout_pipe, stdout_reader,
+                                    stderr_pipe, stderr_reader, cwd, full_env)
 
 
 # Yields a read pipe.
@@ -540,5 +542,5 @@ def stringify_paths_in_list(l):
 
 
 def stringify_paths_in_dict(d):
-    return {stringify_if_path(key): stringify_if_path(val)
-            for key, val in d.items()}
+    return dict((stringify_if_path(key), stringify_if_path(val))
+                for key, val in d.items())
