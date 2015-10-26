@@ -3,7 +3,6 @@ from contextlib import contextmanager
 import io
 import os
 import pathlib
-import re
 import subprocess
 import threading
 
@@ -142,18 +141,6 @@ class Command(Expression):
                 cwd=cwd, env=full_env)
         return status if self._check else 0
 
-    def __repr__(self):
-        quoted_parts = []
-        for part in self._tuple:
-            # Decode bytes.
-            if not isinstance(part, str):
-                part = part.decode()
-            # Quote strings that have whitespace.
-            if re.search(r'\s+', part):
-                part = '"' + part + '"'
-            quoted_parts.append(part)
-        return ' '.join(quoted_parts)
-
 
 class ShellCommand(Expression):
     def __init__(self, shell_cmd, check, ioargs):
@@ -174,10 +161,6 @@ class ShellCommand(Expression):
                 cwd=cwd, env=full_env)
         return status if self._check else 0
 
-    def __repr__(self):
-        # TODO: This should do some escaping.
-        return str(self._shell_cmd)
-
 
 class Subshell(Expression):
     def __init__(self, expr, check, ioargs):
@@ -192,27 +175,12 @@ class Subshell(Expression):
 
 
 class CompoundExpression(Expression):
-    # subclasses must override this
-    _repr_divider = None
-
     def __init__(self, left, right):
         self._left = left
         self._right = right
 
-    def __repr__(self):
-        parts = []
-        for part in (self._left, self._right):
-            if (isinstance(part, CompoundExpression) and
-                    not isinstance(part, self.__class__)):
-                parts.append('(' + repr(part) + ')')
-            else:
-                parts.append(repr(part))
-        return self._repr_divider.join(parts)
-
 
 class Then(CompoundExpression):
-    _repr_divider = ' && '
-
     def _exec(self, parent_iocontext):
         # Execute the first command.
         left_status = self._left._exec(parent_iocontext)
@@ -232,8 +200,6 @@ class Then(CompoundExpression):
 # those can conflict with other listeners that might by in the same process,
 # and they won't work on Windows anyway.
 class Pipe(CompoundExpression):
-    _repr_divider = ' || '
-
     def _exec(self, parent_iocontext):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
