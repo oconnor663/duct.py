@@ -4,6 +4,7 @@ import duct
 from duct import cmd, sh, DEVNULL, STDOUT, STDERR
 from pathlib import Path
 from nose.tools import eq_, raises, assert_raises
+import os
 import tempfile
 
 
@@ -97,7 +98,7 @@ def test_input():
 
 def test_stdin():
     tempfd, temp = tempfile.mkstemp()
-    with open(tempfd, 'w') as f:
+    with os.fdopen(tempfd, 'w') as f:
         f.write('foo')
     expected = '0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33  -'
     # with a file path
