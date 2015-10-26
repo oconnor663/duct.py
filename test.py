@@ -167,3 +167,10 @@ def test_pipe_returns_rightmost_error():
     eq_(1, sh('true').pipe('false').run(check=False).status)
     eq_(1, cmd('false').pipe('false').run(check=False).status)
     eq_(3, cmd('false').pipe(sh('bash -c "exit 3"')).run(check=False).status)
+
+
+def test_checked_error_contains_status():
+    try:
+        sh('bash -c "exit 123"').run()
+    except CheckedError as e:
+        assert '123' in str(e)
