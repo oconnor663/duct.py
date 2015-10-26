@@ -1,8 +1,9 @@
 #! /usr/bin/env nosetests
 
-from duct import cmd, sh, CheckedError, DEVNULL, STDOUT, STDERR
+import duct
+from duct import cmd, sh, DEVNULL, STDOUT, STDERR
 from pathlib import Path
-from nose.tools import eq_, raises
+from nose.tools import eq_, raises, assert_raises
 import tempfile
 
 
@@ -21,7 +22,7 @@ def test_bytes():
     eq_(b'\x00'*10, out)
 
 
-@raises(CheckedError)
+@raises(duct.CheckedError)
 def test_nonzero_status_throws():
     cmd('false').run()
 
@@ -172,5 +173,14 @@ def test_pipe_returns_rightmost_error():
 def test_checked_error_contains_status():
     try:
         sh('bash -c "exit 123"').run()
-    except CheckedError as e:
+    except duct.CheckedError as e:
         assert '123' in str(e)
+
+
+def test_ThreadWithReturn_reraises_exceptions():
+    def t():
+        raise ZeroDivisionError
+    thread = duct.ThreadWithReturn(t)
+    thread.start()
+    with assert_raises(ZeroDivisionError):
+        thread.join()
