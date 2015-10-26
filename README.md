@@ -1,5 +1,4 @@
-duct
-====
+# duct [![Build Status](https://travis-ci.org/oconnor663/duct.svg?branch=master)](https://travis-ci.org/oconnor663/duct) [![Coverage Status](https://img.shields.io/coveralls/oconnor663/duct.svg)](https://coveralls.io/r/oconnor663/duct)
 
 A Python library for shelling out. Goals:
 
