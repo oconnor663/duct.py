@@ -2,9 +2,15 @@ from collections import namedtuple
 from contextlib import contextmanager
 import io
 import os
-import pathlib
 import subprocess
 import threading
+
+try:
+    from pathlib import PurePath
+except ImportError:
+    # a dummy class that nothing will ever be an instance of
+    class PurePath:
+        pass
 
 # Public API
 # ==========
@@ -467,7 +473,7 @@ def open_devnull(mode):
 
 
 def is_path(iovalue):
-    return isinstance(iovalue, (str, bytes, pathlib.PurePath))
+    return isinstance(iovalue, (str, bytes, PurePath))
 
 
 @contextmanager
@@ -532,7 +538,7 @@ def make_full_env(parent_env, env, full_env):
 
 
 def stringify_if_path(x):
-    if isinstance(x, pathlib.PurePath):
+    if isinstance(x, PurePath):
         return str(x)
     return x
 
