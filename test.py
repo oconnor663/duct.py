@@ -184,3 +184,17 @@ def test_ThreadWithReturn_reraises_exceptions():
     thread.start()
     with assert_raises(ZeroDivisionError):
         thread.join()
+
+
+def test_getting_reader_output_before_join_throws():
+    default_context = duct.IOContext()
+    ioargs = duct.make_ioargs(stdout=str, stderr=str)
+    with default_context.child_context(ioargs) as iocontext:
+        with assert_raises(RuntimeError):
+            iocontext.stdout_result()
+        with assert_raises(RuntimeError):
+            iocontext.stderr_result()
+    # Exiting the with-block joins the reader threads, so the output accessors
+    # should no longer throw.
+    eq_('', iocontext.stdout_result())
+    eq_('', iocontext.stderr_result())
