@@ -24,7 +24,7 @@ def cmd(prog, *args, check=True, **io_kwargs):
 
 def sh(shell_str, check=True, **io_kwargs):
     ioargs = make_ioargs(**io_kwargs)
-    return Shell(shell_str, check, ioargs)
+    return ShellCommand(shell_str, check, ioargs)
 
 
 class Expression:
@@ -76,6 +76,16 @@ class Expression:
 
     def then(self, *cmd, **cmd_kwargs):
         return Then(self, command_or_parts(*cmd, **cmd_kwargs))
+
+    def subshell(self, check=True, **io_kwargs):
+        '''For applying IO arguments to an entire expression. Normally you do
+        this with arguments to run(), but sometimes you need to do further
+        composition. For example:
+
+            some_expression.subshell(stderr=STDOUT).pipe(another_expression)
+        '''
+        ioargs = make_ioargs(**io_kwargs)
+        return Subshell(self, check, ioargs)
 
 
 # Implementation Details
@@ -145,7 +155,7 @@ class Command(Expression):
         return ' '.join(quoted_parts)
 
 
-class Shell(Expression):
+class ShellCommand(Expression):
     def __init__(self, shell_cmd, check, ioargs):
         # The command could be a Path. This is potentially useful on Windows
         # where you have to run things like .py files in shell mode.
@@ -167,6 +177,18 @@ class Shell(Expression):
     def __repr__(self):
         # TODO: This should do some escaping.
         return str(self._shell_cmd)
+
+
+class Subshell(Expression):
+    def __init__(self, expr, check, ioargs):
+        self._expr = expr
+        self._check = check
+        self._ioargs = ioargs
+
+    def _exec(self, parent_iocontext):
+        with parent_iocontext.child_context(self._ioargs) as iocontext:
+            status = self._expr._exec(iocontext)
+        return status if self._check else 0
 
 
 class CompoundExpression(Expression):

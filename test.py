@@ -149,3 +149,9 @@ def test_commands_can_be_paths():
     echo = Path('/bin/echo')
     eq_('foo', cmd(echo, 'foo').read())
     eq_('\n', sh(echo).read(trim=False))
+
+
+def test_subshell():
+    c = sh("echo foo >&2 ; false")
+    out = c.subshell(check=False, stderr=STDOUT).read()
+    eq_("foo", out)
