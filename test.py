@@ -161,3 +161,9 @@ def test_subshell():
 def test_kwargs_prohibited_with_expression_value():
     # This should throw even before the command is run.
     cmd("foo").pipe(cmd("bar"), check=False)
+
+
+def test_pipe_returns_rightmost_error():
+    eq_(1, sh('true').pipe('false').run(check=False).status)
+    eq_(1, cmd('false').pipe('false').run(check=False).status)
+    eq_(3, cmd('false').pipe(sh('bash -c "exit 3"')).run(check=False).status)
