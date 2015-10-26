@@ -155,3 +155,9 @@ def test_subshell():
     c = sh("echo foo >&2 ; false")
     out = c.subshell(check=False, stderr=STDOUT).read()
     eq_("foo", out)
+
+
+@raises(TypeError)
+def test_kwargs_prohibited_with_expression_value():
+    # This should throw even before the command is run.
+    cmd("foo").pipe(cmd("bar"), check=False)
