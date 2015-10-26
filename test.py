@@ -198,3 +198,14 @@ def test_getting_reader_output_before_join_throws():
     # should no longer throw.
     eq_('', iocontext.stdout_result())
     eq_('', iocontext.stderr_result())
+
+
+def test_invalid_io_args():
+    with assert_raises(TypeError):
+        cmd('foo', input=1.0).run()
+    with assert_raises(TypeError):
+        cmd('foo', stdin=1.0).run()
+    with assert_raises(TypeError):
+        cmd('foo', stdout=1.0).run()
+    with assert_raises(TypeError):
+        cmd('foo', stderr=1.0).run()

@@ -378,9 +378,7 @@ def child_input_pipe(parent_pipe, input_arg, stdin_arg):
     # Check the input parameter first, because stdin will be None if input is
     # set, and we don't want to short circuit. (None is an otherwise valid
     # stdin value, meaning "inherit the current context's stdin".)
-    if input_arg is not None and stdin_arg is not None:
-        raise ValueError('stdin and input arguments may not both be used.')
-    elif wants_input_writer(input_arg):
+    if wants_input_writer(input_arg):
         with spawn_input_writer(input_arg) as read:
             yield read
     elif input_arg is not None:
