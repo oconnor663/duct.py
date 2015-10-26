@@ -188,7 +188,7 @@ def test_ThreadWithReturn_reraises_exceptions():
 
 def test_getting_reader_output_before_join_throws():
     default_context = duct.IOContext()
-    ioargs = duct.make_ioargs(stdout=str, stderr=str)
+    _, ioargs = duct.parse_cmd_kwargs(stdout=str, stderr=str)
     with default_context.child_context(ioargs) as iocontext:
         with assert_raises(RuntimeError):
             iocontext.stdout_result()

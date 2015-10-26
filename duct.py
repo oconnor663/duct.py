@@ -16,20 +16,20 @@ DEVNULL = -3
 STDERR = -4
 
 
-def cmd(prog, *args, check=True, **io_kwargs):
-    ioargs = make_ioargs(**io_kwargs)
+def cmd(prog, *args, **cmd_kwargs):
+    check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
     return Command(prog, args, check, ioargs)
 
 
-def sh(shell_str, check=True, **io_kwargs):
-    ioargs = make_ioargs(**io_kwargs)
+def sh(shell_str, **cmd_kwargs):
+    check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
     return ShellCommand(shell_str, check, ioargs)
 
 
 class Expression:
     'Abstract base class for all expression types.'
 
-    def run(self, check=True, trim=False, **io_kwargs):
+    def run(self, trim=False, **cmd_kwargs):
         '''Start running an expression, wait for it to finish, and return a
         Result. This takes a number of arguments:
 
@@ -60,7 +60,7 @@ class Expression:
               backticks or $(). Note that this never applies to output captured
               as bytes.
         '''
-        ioargs = make_ioargs(**io_kwargs)
+        check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
         return run_expression(self, check, trim, ioargs)
 
     def read(self, stdout=str, trim=True, **run_kwargs):
@@ -76,14 +76,14 @@ class Expression:
     def then(self, *cmd, **cmd_kwargs):
         return Then(self, command_or_parts(*cmd, **cmd_kwargs))
 
-    def subshell(self, check=True, **io_kwargs):
+    def subshell(self, **cmd_kwargs):
         '''For applying IO arguments to an entire expression. Normally you do
         this with arguments to run(), but sometimes you need to do further
         composition. For example:
 
             some_expression.subshell(stderr=STDOUT).pipe(another_expression)
         '''
-        ioargs = make_ioargs(**io_kwargs)
+        check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
         return Subshell(self, check, ioargs)
 
 
@@ -213,14 +213,14 @@ class Pipe(Expression):
         read_pipe, write_pipe = open_pipe(binary=True)
 
         def do_left():
-            left_ioargs = make_ioargs(stdout=write_pipe)
+            _, left_ioargs = parse_cmd_kwargs(stdout=write_pipe)
             left_iocm = parent_iocontext.child_context(left_ioargs)
             with write_pipe, left_iocm as iocontext:
                 return self._left._exec(iocontext)
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
-        right_ioargs = make_ioargs(stdin=read_pipe)
+        _, right_ioargs = parse_cmd_kwargs(stdin=read_pipe)
         right_iocm = parent_iocontext.child_context(right_ioargs)
         with read_pipe, right_iocm as iocontext:
             right_status = self._right._exec(iocontext)
@@ -292,23 +292,33 @@ class ThreadWithReturn(threading.Thread):
         return self._return
 
 
-_IOArgs = namedtuple('_IOArgs', ['input', 'stdin', 'stdout', 'stderr', 'cwd',
-                                 'env', 'full_env'])
+IOArgs = namedtuple('IOArgs', ['input', 'stdin', 'stdout', 'stderr', 'cwd',
+                               'env', 'full_env'])
 
 
-def make_ioargs(input=None, stdin=None, stdout=None, stderr=None, cwd=None,
-                env=None, full_env=None):
+def parse_cmd_kwargs(input=None, stdin=None, stdout=None, stderr=None,
+                     cwd=None, env=None, full_env=None, check=True):
     '''We define this constructor function so that we can do early error
     checking on IO arguments. Other constructors can pass their keyword args
     here as part of __init__, rather than holding them until _exec, so that
     invalid keywords cause errors in the right place. This also lets us do some
     consistency checks early, like prohibiting both input and stdin at the same
-    time.'''
+    time.
+
+    If we only needed to support Python 3, we might handle the "check" keyword
+    arg separately from this function. It's not intended to be inherited by
+    subexpressions, so it doesn't live in the IOArgs. However, Python 2 doesn't
+    support syntax like this:
+
+        def f(*args, check=True, **kwargs):  # only valid in Python 3!
+
+    So we have to handle "check" in the same kwargs dict, and parse it out
+    here.'''
     if input is not None and stdin is not None:
         raise ValueError('stdin and input arguments may not both be used.')
     if env is not None and full_env is not None:
         raise ValueError('env and full_env arguments may not both be used.')
-    return _IOArgs(input, stdin, stdout, stderr, cwd, env, full_env)
+    return check, IOArgs(input, stdin, stdout, stderr, cwd, env, full_env)
 
 
 class IOContext:
