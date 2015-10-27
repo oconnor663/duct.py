@@ -6,8 +6,8 @@ python:
   - "3.4"
   - "3.5"
 install:
-  - pip install pathlib nose coveralls
+  - pip install pytest pytest-cov coveralls
 script:
-  - nosetests --with-coverage -v test.py
+  - py.test -v --cov=duct.py test_duct.py
 after_success:
   - coveralls
