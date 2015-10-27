@@ -15,6 +15,21 @@ except ImportError:
     has_pathlib = False
 
 
+def setup():
+    '''Record the next available file descriptor. When each test finishes,
+    check that the next available file descriptor is the same. That means we
+    didn't leak any fd's.'''
+    global next_fd
+    with open(os.devnull) as f:
+        next_fd = f.fileno()
+
+
+def teardown():
+    with open(os.devnull) as f:
+        new_fd = f.fileno()
+    assert next_fd == new_fd, "We leaked a file descriptor!"
+
+
 def test_hello_world():
     out = sh('echo "hello  world"').read()
     assert "hello  world" == out
