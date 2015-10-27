@@ -1,6 +1,5 @@
 #! /usr/bin/env nosetests
 
-from pathlib import Path
 import os
 import tempfile
 
@@ -8,6 +7,12 @@ from pytest import raises
 
 import duct
 from duct import cmd, sh, DEVNULL, STDOUT, STDERR
+
+try:
+    from pathlib import Path
+    has_pathlib = True
+except ImportError:
+    has_pathlib = False
 
 
 def test_hello_world():
@@ -57,18 +62,21 @@ def test_cwd():
     # Test cwd at both the top level and the command level, and that either can
     # be a pathlib Path.
     assert '/tmp' == cmd('pwd').read(cwd='/tmp')
-    assert '/tmp' == cmd('pwd').read(cwd=Path('/tmp'))
     assert '/tmp' == cmd('pwd', cwd='/tmp').read(cwd='/something/else')
-    assert '/tmp' == cmd('pwd', cwd=Path('/tmp')).read(cwd='/something/else')
+    if has_pathlib:
+        assert '/tmp' == cmd('pwd').read(cwd=Path('/tmp'))
+        assert ('/tmp' == cmd('pwd', cwd=Path('/tmp'))
+                .read(cwd='/something/else'))
 
 
 def test_env():
     # Test env at both the top level and the command level, and that values can
     # be pathlib Paths.
     assert "/" == sh("bash -c 'echo $x'").read(env={'x': '/'})
-    assert "/" == sh("bash -c 'echo $x'").read(env={'x': Path('/')})
     assert "/" == sh("bash -c 'echo $x'", env={'x': '/'}).read()
-    assert "/" == sh("bash -c 'echo $x'", env={'x': Path('/')}).read()
+    if has_pathlib:
+        assert "/" == sh("bash -c 'echo $x'").read(env={'x': Path('/')})
+        assert "/" == sh("bash -c 'echo $x'", env={'x': Path('/')}).read()
 
 
 def test_full_env():
@@ -107,8 +115,9 @@ def test_stdin():
     out = cmd('sha1sum').read(stdin=temp)
     assert expected == out
     # with a Path path
-    out = cmd('sha1sum').read(stdin=Path(temp))
-    assert expected == out
+    if has_pathlib:
+        out = cmd('sha1sum').read(stdin=Path(temp))
+        assert expected == out
     # with an open file
     with open(temp) as f:
         out = cmd('sha1sum').read(stdin=f)
@@ -124,9 +133,10 @@ def test_stdout():
         sh('echo hi').run(stdout=temp.name)
         assert 'hi\n' == open(temp.name).read()
     # with a Path path
-    with tempfile.NamedTemporaryFile() as temp:
-        sh('echo hi').run(stdout=Path(temp.name))
-        assert 'hi\n' == open(temp.name).read()
+    if has_pathlib:
+        with tempfile.NamedTemporaryFile() as temp:
+            sh('echo hi').run(stdout=Path(temp.name))
+            assert 'hi\n' == open(temp.name).read()
     # with an open file
     with tempfile.NamedTemporaryFile() as temp:
         sh('echo hi').run(stdout=temp)
@@ -150,9 +160,10 @@ def test_stdout():
 
 
 def test_commands_can_be_paths():
-    echo = Path('/bin/echo')
-    assert 'foo' == cmd(echo, 'foo').read()
-    assert '\n' == sh(echo).read(trim=False)
+    if has_pathlib:
+        echo = Path('/bin/echo')
+        assert 'foo' == cmd(echo, 'foo').read()
+        assert '\n' == sh(echo).read(trim=False)
 
 
 def test_subshell():
