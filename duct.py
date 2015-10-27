@@ -12,6 +12,7 @@ except ImportError:
     class PurePath:
         pass
 
+
 # Public API
 # ==========
 
@@ -486,6 +487,13 @@ def wants_input_writer(input_arg):
     return isinstance(input_arg, (str, bytes))
 
 
+try:
+    # not defined in Python 2
+    PIPE_CLOSED_ERROR = BrokenPipeError
+except NameError:
+    PIPE_CLOSED_ERROR = IOError
+
+
 @contextmanager
 def spawn_input_writer(input_arg):
     read, write = open_pipe(binary=isinstance(input_arg, bytes))
@@ -493,11 +501,11 @@ def spawn_input_writer(input_arg):
     def write_thread():
         with write:
             # If the write blocks on a full pipe buffer (default 64 KB on
-            # Linux), and the program on the other end quits before reading
-            # everything, the write will throw. Catch this error.
+            # Linux), and then the program on the other end quits before
+            # reading everything, the write will throw. Catch this error.
             try:
                 write.write(input_arg)
-            except BrokenPipeError:
+            except PIPE_CLOSED_ERROR:
                 pass
     thread = ThreadWithReturn(write_thread)
     thread.start()
