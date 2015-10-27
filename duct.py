@@ -492,9 +492,13 @@ def spawn_input_writer(input_arg):
 
     def write_thread():
         with write:
-            write.write(input_arg)
-    # Nothing ever needs to join this thread. It terminates either when it's
-    # done writing, or when its pipe closes.
+            # If the write blocks on a full pipe buffer (default 64 KB on
+            # Linux), and the program on the other end quits before reading
+            # everything, the write will throw. Catch this error.
+            try:
+                write.write(input_arg)
+            except BrokenPipeError:
+                pass
     thread = ThreadWithReturn(write_thread)
     thread.start()
     with read:

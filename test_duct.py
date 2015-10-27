@@ -239,3 +239,12 @@ def test_invalid_io_args():
         cmd('foo', stdout=1.0).run()
     with raises(TypeError):
         cmd('foo', stderr=1.0).run()
+
+
+def test_write_error_in_input_thread():
+    '''The standard Linux pipe buffer is 64 KB, so we pipe 100 KB into a
+    program that reads nothing. That will cause the writer thread to block on
+    the pipe, and then that write will fail. Test that we catch this
+    BrokenPipeError.'''
+    test_input = '\x00' * 100 * 1000
+    sh('true').run(input=test_input)
