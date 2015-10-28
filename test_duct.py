@@ -228,7 +228,8 @@ def test_commands_can_be_paths():
         with path.open('w') as f:
             if os.name == 'nt':
                 f.write('@echo off\n')
-            # This line by itself is valid on Linux.
+            else:
+                f.write('#! /bin/sh\n')
             f.write('echo some stuff\n')
         path.chmod(0o755)
         assert 'some stuff' == cmd(path).read()
