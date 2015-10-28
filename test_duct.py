@@ -224,9 +224,12 @@ def test_stdout():
 def test_commands_can_be_paths():
     if has_pathlib:
         tempdir = tempfile.mkdtemp()
-        path = Path(tempdir, "script.py")
+        path = Path(tempdir, "script.bat")
         with path.open('w') as f:
-            f.write('#! /usr/bin/env python\nprint("some stuff")')
+            if os.name == 'nt':
+                f.write('@echo off\n')
+            # This line by itself is valid on Linux.
+            f.write('echo some stuff\n')
         path.chmod(0o755)
         assert 'some stuff' == cmd(path).read()
         assert 'some stuff\n' == sh(path).read(trim=False)
