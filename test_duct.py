@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import textwrap
 
 from pytest import raises
 
@@ -31,9 +32,12 @@ def false(**kwargs):
 
 
 def head(c, **kwargs):
-    return cmd('python', '-c',
-               'import sys; sys.stdout.write(sys.stdin.read({0}))'.format(c),
-               **kwargs)
+    code = textwrap.dedent('''\
+        import sys
+        input_str = sys.stdin.read({0})
+        sys.stdout.write(input_str)
+        '''.format(c))
+    return cmd('python', '-c', code, **kwargs)
 
 
 def pwd(**kwargs):
@@ -48,9 +52,12 @@ def echo_x(**kwargs):
 
 
 def replace(a, b, **kwargs):
-    return cmd(
-        'python', '-c', 'import sys; print(sys.stdin.read().replace({0}, {1}))'
-        .format(repr(a), repr(b)), **kwargs)
+    code = textwrap.dedent('''\
+        import sys
+        input_str = sys.stdin.read()
+        sys.stdout.write(input_str.replace({0}, {1}))
+        '''.format(repr(a), repr(b)))
+    return cmd('python', '-c', code, **kwargs)
 
 
 # setup and teardown functions for the entire module
