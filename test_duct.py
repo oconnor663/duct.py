@@ -78,6 +78,15 @@ def teardown():
     assert next_fd == new_fd, "We leaked a file descriptor!"
 
 
+# utilities
+# ---------
+
+def mktemp():
+    fd, path = tempfile.mkstemp()
+    os.close(fd)
+    return path
+
+
 # tests
 # -----
 
@@ -198,18 +207,18 @@ def test_stdin():
 
 def test_stdout():
     # with a file path
-    with tempfile.NamedTemporaryFile() as temp:
-        sh('echo hi').run(stdout=temp.name)
-        assert 'hi\n' == open(temp.name).read()
+    temp = mktemp()
+    sh('echo hi').run(stdout=temp)
+    assert 'hi\n' == open(temp).read()
     # with a Path path
     if has_pathlib:
-        with tempfile.NamedTemporaryFile() as temp:
-            sh('echo hi').run(stdout=Path(temp.name))
-            assert 'hi\n' == open(temp.name).read()
+        temp = mktemp()
+        sh('echo hi').run(stdout=Path(temp))
+        assert 'hi\n' == open(temp).read()
     # with an open file
-    with tempfile.NamedTemporaryFile() as temp:
-        sh('echo hi').run(stdout=temp)
-        assert 'hi\n' == open(temp.name).read()
+    temp = mktemp()
+    sh('echo hi').run(stdout=temp)
+    assert 'hi\n' == open(temp).read()
     # with explicit DEVNULL
     out = sh('echo hi', stdout=DEVNULL).read()
     assert '' == out
@@ -217,12 +226,12 @@ def test_stdout():
     result = sh('echo hi', stdout=STDERR).run(stdout=str, stderr=str)
     assert '' == result.stdout
     assert 'hi\n' == result.stderr
-    # from stderr with STDOUT (yes, this works on Windows)
-    result = sh('echo hi 1>&2', stderr=STDOUT).run(stdout=bytes, stderr=bytes)
-    assert b'hi\n' == result.stdout
+    # from stderr with STDOUT (note Windows would output any space before >)
+    result = sh('echo hi>&2', stderr=STDOUT).run(stdout=str, stderr=bytes)
+    assert 'hi\n' == result.stdout
     assert b'' == result.stderr
     # full swap
-    result = (sh('echo hi && echo lo 1>&2', stdout=STDERR, stderr=STDOUT)
+    result = (sh('echo hi&& echo lo>&2', stdout=STDERR, stderr=STDOUT)
               .run(stdout=str, stderr=str))
     assert 'lo\n' == result.stdout
     assert 'hi\n' == result.stderr
