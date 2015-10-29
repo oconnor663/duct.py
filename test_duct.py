@@ -91,8 +91,8 @@ def mktemp():
 # -----
 
 def test_hello_world():
-    out = sh('echo "hello  world"').read()
-    assert "hello  world" == out
+    out = sh('echo hello world').read()
+    assert "hello world" == out
 
 
 def test_result():
