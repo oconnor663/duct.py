@@ -185,24 +185,23 @@ def test_input():
 
 
 def test_stdin():
-    tempfd, temp = tempfile.mkstemp()
-    with os.fdopen(tempfd, 'w') as f:
+    temp = mktemp()
+    with open(temp, 'w') as f:
         f.write('foo')
-    expected = '0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33  -'
     # with a file path
-    out = cmd('sha1sum').read(stdin=temp)
-    assert expected == out
+    out = replace('o', 'a').read(stdin=temp)
+    assert 'faa' == out
     # with a Path path
     if has_pathlib:
-        out = cmd('sha1sum').read(stdin=Path(temp))
-        assert expected == out
+        out = replace('o', 'b').read(stdin=Path(temp))
+        assert 'fbb' == out
     # with an open file
     with open(temp) as f:
-        out = cmd('sha1sum').read(stdin=f)
-        assert expected == out
+        out = replace('o', 'c').read(stdin=f)
+        assert 'fcc' == out
     # with explicit DEVNULL
-    out = cmd('sha1sum').read(stdin=DEVNULL)
-    assert 'da39a3ee5e6b4b0d3255bfef95601890afd80709  -' == out
+    out = replace('o', 'd').read(stdin=DEVNULL)
+    assert '' == out
 
 
 def test_stdout():
