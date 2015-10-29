@@ -127,10 +127,10 @@ def test_then():
 
 
 def test_nesting():
-    innermost = true().then('cat')
+    innermost = true().then(replace('i', 'o'))
     middle = true().then(innermost)
     out = sh('echo hi').pipe(middle).read()
-    assert 'hi' == out
+    assert 'ho' == out
 
 
 def test_cwd():
