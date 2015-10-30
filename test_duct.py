@@ -122,8 +122,8 @@ def test_pipe():
 
 
 def test_then():
-    assert 'hi' == true().then(sh('echo hi')).read()
-    assert '' == false().then(sh('echo hi')).read(check=False)
+    assert 'A' == true().then('python', '-c', 'print("A")').read()
+    assert '' == false().then('python', '-c', 'print("A")').read(check=False)
 
 
 def test_nesting():
