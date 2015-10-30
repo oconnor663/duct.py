@@ -1,4 +1,4 @@
-# duct [![Build Status](https://travis-ci.org/oconnor663/duct.svg?branch=master)](https://travis-ci.org/oconnor663/duct) [![Coverage Status](https://coveralls.io/repos/oconnor663/duct/badge.svg?branch=master&service=github)](https://coveralls.io/github/oconnor663/duct?branch=master)
+# duct [![Build Status](https://travis-ci.org/oconnor663/duct.svg?branch=master)](https://travis-ci.org/oconnor663/duct) [![Build status](https://ci.appveyor.com/api/projects/status/i7kdylq9klgw993g/branch/master?svg=true)](https://ci.appveyor.com/project/oconnor663/duct/branch/master) [![Coverage Status](https://coveralls.io/repos/oconnor663/duct/badge.svg?branch=master&service=github)](https://coveralls.io/github/oconnor663/duct?branch=master)
 
 A Python library for shelling out. Goals:
 
