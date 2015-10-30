@@ -80,12 +80,14 @@ install:
   # compiled extensions and are not provided as pre-built wheel packages,
   # pip will build them from source using the MSVC compiler matching the
   # target Python version and architecture
-  - "%CMD_IN_ENV% pip install pytest"
+  - "%CMD_IN_ENV% pip install pytest pytest-timeout"
 
 build_script:
   # Without this Appveyor complains it can't find a solution file.
   - "echo NO-OP"
 
 test_script:
-  # Run the project tests
-  - "%CMD_IN_ENV% py.test"
+  # Run tests with a 5 second timeout each. I'm putting this in now because we
+  # have pipe hangs on some versions of Windows, and there's no sense in
+  # letting the test run block for an hour.
+  - "%CMD_IN_ENV% py.test --timeout=5"
