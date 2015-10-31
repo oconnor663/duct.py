@@ -1,27 +1,23 @@
 #! /usr/bin/env python3
 
 import os
-from subprocess import Popen, PIPE
-
+from subprocess import Popen
 
 cat = ['python', '-c', 'import sys; sys.stdout.write(sys.stdin.read())']
 
-
-def run(*, close):
-    print("running {} close".format("WITH" if close else "WITHOUT"))
-    r, w = os.pipe()
-    left = Popen(cat, stdin=PIPE, stdout=w)
-    right = Popen(cat, stdin=r, stdout=PIPE)
-    if close:
-        os.close(r)
-        os.close(w)
-    print("writing")
-    left.communicate(b"foo")
-    print("wrote. waiting.")
-    stdout, stder = right.communicate()
-    print("got:", stdout)
-
-
-run(close=True)
-print()
-run(close=False)
+inputr, inputw = os.pipe()
+piper, pipew = os.pipe()
+outputr, outputw = os.pipe()
+Popen(cat, stdin=inputr, stdout=pipew)
+Popen(cat, stdin=piper, stdout=outputw)
+os.close(inputr)
+os.close(piper)
+os.close(pipew)
+os.close(outputw)
+print("writing")
+os.write(inputw, b"foo")
+os.close(inputw)
+print("wrote. waiting.")
+stdout = os.read(outputr, 100)
+os.close(outputr)
+print("got:", stdout)
