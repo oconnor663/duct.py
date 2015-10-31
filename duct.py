@@ -221,17 +221,19 @@ class Pipe(Expression):
         # receive EOF, and closing the read end allows the left side to receive
         # SIGPIPE.
         read_pipe, write_pipe = open_pipe(binary=True)
+        write_fd = write_pipe.fileno()
+        print("grabbed write pipe", write_fd, os.stat(write_fd))
 
         def do_left():
-            _, left_ioargs = parse_cmd_kwargs(stdout=write_pipe.fileno())
+            _, left_ioargs = parse_cmd_kwargs(stdout=write_fd)
             left_iocm = parent_iocontext.child_context(left_ioargs)
-            with write_pipe:
+            try:
                 with left_iocm as iocontext:
                     res = self._left._exec(iocontext)
-                    print("ABOUT TO EXIT LEFT WITH STATEMENT")
-            print("ABOUT TO CLOSE LEFT WRITE PIPE", write_pipe.fileno())
-            os.close(write_pipe.fileno())
-            print("CLOSED LEFT WRITE PIPE", write_pipe.fileno())
+            finally:
+                print("ABOUT TO CLOSE LEFT WRITE PIPE", os.stat(write_fd))
+                os.close(write_fd)
+                print("CLOSED LEFT WRITE PIPE", os.stat(write_fd))
             return res
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
@@ -241,8 +243,8 @@ class Pipe(Expression):
         with read_pipe:
             with right_iocm as iocontext:
                 right_status = self._right._exec(iocontext)
-        print("CLOSED RIGHT READ PIPE")
         left_status = left_thread.join()
+        print("CLOSED RIGHT READ PIPE")
 
         # Return the rightmost error, if any. Note that cwd and env changes
         # never propagate out of the pipe. This is the same behavior as bash.
