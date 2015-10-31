@@ -30,5 +30,5 @@ def cat(arg):
 
 
 print("starting pipe")
-out = cat('left').pipe(cat('right')).read(input="second")
+out = cat('left').pipe(cat('right')).read(input="stuff")
 print("got", repr(out))
