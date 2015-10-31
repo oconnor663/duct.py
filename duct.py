@@ -228,7 +228,10 @@ class Pipe(Expression):
             with write_pipe:
                 with left_iocm as iocontext:
                     res = self._left._exec(iocontext)
-            print("CLOSED LEFT WRITE PIPE")
+                    print("ABOUT TO EXIT LEFT WITH STATEMENT")
+            print("ABOUT TO CLOSE LEFT WRITE PIPE", write_pipe.fileno())
+            os.close(write_pipe.fileno())
+            print("CLOSED LEFT WRITE PIPE", write_pipe.fileno())
             return res
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
