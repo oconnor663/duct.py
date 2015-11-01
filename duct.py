@@ -1,5 +1,6 @@
 from collections import namedtuple
 from contextlib import contextmanager
+import copy
 import io
 import os
 import subprocess
@@ -219,21 +220,30 @@ class Pipe(Expression):
         # SIGPIPE.
         read_pipe, write_pipe = open_pipe(binary=True)
 
-        def do_left():
-            _, left_ioargs = parse_cmd_kwargs(stdout=write_pipe)
-            left_iocm = parent_iocontext.child_context(left_ioargs)
-            with write_pipe:
-                with left_iocm as iocontext:
-                    return self._left._exec(iocontext)
-        left_thread = ThreadWithReturn(target=do_left)
-        left_thread.start()
+        # We copy make copies of the IOContext for the left and right sides,
+        # with stdout and stdin overridden respectively. We don't need the
+        # child_context() method, because we're neither interpreting IOArgs nor
+        # opening any files or readers/writers.
+        # TODO: Support this directly?
+        left_iocontext = copy.copy(parent_iocontext)
+        left_iocontext.stdout_pipe = write_pipe
+        right_iocontext = copy.copy(parent_iocontext)
+        right_iocontext.stdin_pipe = read_pipe
 
-        _, right_ioargs = parse_cmd_kwargs(stdin=read_pipe)
-        right_iocm = parent_iocontext.child_context(right_ioargs)
-        with read_pipe:
-            with right_iocm as iocontext:
-                right_status = self._right._exec(iocontext)
+        # Kick off a thread for each side.
+        left_thread = ThreadWithReturn(
+            target=self._left._exec, args=[left_iocontext])
+        left_thread.start()
+        right_thread = ThreadWithReturn(
+            target=self._right._exec, args=[right_iocontext])
+        right_thread.start()
+
+        # Join the threads in a VERY SPECIFIC ORDER THINKABOUTIT!!!
+        # TODO: WROOOOOOOOOOOOOOOOOOOOOOOOONG
         left_status = left_thread.join()
+        write_pipe.close()
+        right_status = right_thread.join()
+        read_pipe.close()
 
         # Return the rightmost error, if any. Note that cwd and env changes
         # never propagate out of the pipe. This is the same behavior as bash.
