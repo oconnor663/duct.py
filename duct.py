@@ -221,24 +221,22 @@ class Pipe(Expression):
 
         def left():
             _, ioargs = parse_cmd_kwargs(stdout=write_pipe)
-            with parent_iocontext.child_context(ioargs) as context:
-                return self._left._exec(context)
+            with write_pipe:
+                with parent_iocontext.child_context(ioargs) as context:
+                    return self._left._exec(context)
         left_thread = ThreadWithReturn(left)
         left_thread.start()
 
         def right():
             _, ioargs = parse_cmd_kwargs(stdin=read_pipe)
-            with parent_iocontext.child_context(ioargs) as context:
-                return self._right._exec(context)
+            with read_pipe:
+                with parent_iocontext.child_context(ioargs) as context:
+                    return self._right._exec(context)
         right_thread = ThreadWithReturn(right)
         right_thread.start()
 
-        # Join the threads in a VERY SPECIFIC ORDER THINKABOUTIT!!!
-        # TODO: WROOOOOOOOOOOOOOOOOOOOOOOOONG
         left_status = left_thread.join()
-        write_pipe.close()
         right_status = right_thread.join()
-        read_pipe.close()
 
         # Return the rightmost error, if any. Note that cwd and env changes
         # never propagate out of the pipe. This is the same behavior as bash.
