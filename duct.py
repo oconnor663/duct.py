@@ -1,6 +1,5 @@
 from collections import namedtuple
 from contextlib import contextmanager
-import copy
 import io
 import os
 import subprocess
@@ -220,22 +219,18 @@ class Pipe(Expression):
         # SIGPIPE.
         read_pipe, write_pipe = open_pipe(binary=True)
 
-        # We copy make copies of the IOContext for the left and right sides,
-        # with stdout and stdin overridden respectively. We don't need the
-        # child_context() method, because we're neither interpreting IOArgs nor
-        # opening any files or readers/writers.
-        # TODO: Support this directly?
-        left_iocontext = copy.copy(parent_iocontext)
-        left_iocontext.stdout_pipe = write_pipe
-        right_iocontext = copy.copy(parent_iocontext)
-        right_iocontext.stdin_pipe = read_pipe
-
-        # Kick off a thread for each side.
-        left_thread = ThreadWithReturn(
-            target=self._left._exec, args=[left_iocontext])
+        def left():
+            _, ioargs = parse_cmd_kwargs(stdout=write_pipe)
+            with parent_iocontext.child_context(ioargs) as context:
+                return self._left._exec(context)
+        left_thread = ThreadWithReturn(left)
         left_thread.start()
-        right_thread = ThreadWithReturn(
-            target=self._right._exec, args=[right_iocontext])
+
+        def right():
+            _, ioargs = parse_cmd_kwargs(stdin=read_pipe)
+            with parent_iocontext.child_context(ioargs) as context:
+                return self._right._exec(context)
+        right_thread = ThreadWithReturn(right)
         right_thread.start()
 
         # Join the threads in a VERY SPECIFIC ORDER THINKABOUTIT!!!
