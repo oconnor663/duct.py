@@ -117,8 +117,24 @@ def test_check():
 
 
 def test_pipe():
-    out = head(3).pipe(replace('x', 'a')).read(input="xxx")
+    out = head(3).pipe(replace('x', 'a')).read(input="xxxxxxxxxx")
     assert "aaa" == out
+
+
+def test_pipe_SIGPIPE():
+    '''On the left side of the pipe, run a command that outputs text forever.
+    That program should receive SIGPIPE when the right side terminates.'''
+    zeroes_code = textwrap.dedent('''\
+        import sys
+        try:
+            while True:
+                sys.stdout.write('0')
+        except Exception:
+            pass
+        ''')
+    zeroes = cmd('python', '-c', zeroes_code)
+    out = zeroes.pipe(head(5)).read()
+    assert "00000" == out
 
 
 def test_then():
