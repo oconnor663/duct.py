@@ -3,6 +3,8 @@
 import subprocess
 import threading
 import os
+import random
+import time
 
 
 def open_pipe():
@@ -27,6 +29,7 @@ output_read, output_write = open_pipe()
 
 # Write into the input pipe.
 def write_input():
+    time.sleep(random.random())
     with input_write:
         input_write.write("flimflam")
 input_thread = threading.Thread(target=write_input)
@@ -43,6 +46,7 @@ output_thread.start()
 
 
 def left():
+    time.sleep(random.random())
     with input_read, pipe_write:
         print("starting left cat...")
         subprocess.call(cat_cmd, stdin=input_read, stdout=pipe_write)
@@ -51,6 +55,7 @@ def left():
 left_thread = threading.Thread(target=left)
 left_thread.start()
 
+time.sleep(random.random())
 with pipe_read, output_write:
     print('starting right cat...')
     subprocess.run(cat_cmd, stdin=pipe_read, stdout=output_write)
