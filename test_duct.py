@@ -151,9 +151,10 @@ def test_nesting():
 
 def test_cwd():
     # Test cwd at both the top level and the command level, and that either can
-    # be a pathlib Path.
-    tmpdir = tempfile.mkdtemp()
-    another = tempfile.mkdtemp()
+    # be a pathlib Path. Use realpath() on the paths we get from mkdtemp(),
+    # because on OSX there's a symlink in there.
+    tmpdir = os.path.realpath(tempfile.mkdtemp())
+    another = os.path.realpath(tempfile.mkdtemp())
     assert tmpdir == pwd().read(cwd=tmpdir)
     assert tmpdir == pwd(cwd=tmpdir).read(cwd=another)
     if has_pathlib:
