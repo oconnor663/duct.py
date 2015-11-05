@@ -127,6 +127,10 @@ def command_or_parts(first, *rest, **cmd_kwargs):
     return cmd(first, *rest, **cmd_kwargs)
 
 
+# WHY DOES THIS UNBREAK WINDOWS?
+popen_lock = threading.Lock()
+
+
 class Command(Expression):
     def __init__(self, prog, args, check, ioargs):
         '''The prog and args will be passed directly to subprocess.call(),
@@ -142,10 +146,12 @@ class Command(Expression):
             command = stringify_paths_in_list(self._tuple)
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
-            status = subprocess.call(
-                command, stdin=iocontext.stdin_pipe,
-                stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
-                cwd=cwd, env=full_env, close_fds=should_close_fds())
+            with popen_lock:
+                proc = subprocess.Popen(
+                    command, stdin=iocontext.stdin_pipe,
+                    stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
+                    cwd=cwd, env=full_env, close_fds=should_close_fds())
+            status = proc.wait()
         return status if self._check else 0
 
 
@@ -162,10 +168,12 @@ class ShellCommand(Expression):
             shell_str = stringify_if_path(self._shell_cmd)
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
-            status = subprocess.call(
-                shell_str, shell=True, stdin=iocontext.stdin_pipe,
-                stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
-                cwd=cwd, env=full_env, close_fds=should_close_fds())
+            with popen_lock:
+                proc = subprocess.Popen(
+                    shell_str, shell=True, stdin=iocontext.stdin_pipe,
+                    stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
+                    cwd=cwd, env=full_env, close_fds=should_close_fds())
+            status = proc.wait()
         return status if self._check else 0
 
 
