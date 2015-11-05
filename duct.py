@@ -219,10 +219,13 @@ class Pipe(Expression):
         # SIGPIPE.
         read_pipe, write_pipe = open_pipe(binary=True)
 
+        popen_event = threading.Event()
+
         def left():
             _, ioargs = parse_cmd_kwargs(stdout=write_pipe)
             with write_pipe:
                 with parent_iocontext.child_context(ioargs) as context:
+                    popen_event.wait()
                     return self._left._exec(context)
         left_thread = ThreadWithReturn(left)
         left_thread.start()
@@ -231,9 +234,14 @@ class Pipe(Expression):
             _, ioargs = parse_cmd_kwargs(stdin=read_pipe)
             with read_pipe:
                 with parent_iocontext.child_context(ioargs) as context:
+                    popen_event.wait()
                     return self._right._exec(context)
         right_thread = ThreadWithReturn(right)
         right_thread.start()
+
+        import time
+        time.sleep(.1)
+        popen_event.set()
 
         left_status = left_thread.join()
         right_status = right_thread.join()
