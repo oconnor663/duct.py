@@ -142,13 +142,10 @@ class Command(Expression):
             command = stringify_paths_in_list(self._tuple)
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
-            side = 'left' if 'left' in self._tuple[2] else 'right'
-            timeout = 5 if 'left' in self._tuple[2] else None
             status = subprocess.call(
-                command, stdin=iocontext.stdin_pipe, timeout=timeout,
+                command, stdin=iocontext.stdin_pipe,
                 stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
                 cwd=cwd, env=full_env, close_fds=should_close_fds())
-            print("EXIT", side)
         return status if self._check else 0
 
 
@@ -221,20 +218,13 @@ class Pipe(Expression):
         # receive EOF, and closing the read end allows the left side to receive
         # SIGPIPE.
         read_pipe, write_pipe = open_pipe(binary=True)
-        write_fd = write_pipe.fileno()
-        print("grabbed write pipe", write_fd, os.stat(write_fd))
 
         def do_left():
-            _, left_ioargs = parse_cmd_kwargs(stdout=write_fd)
+            _, left_ioargs = parse_cmd_kwargs(stdout=write_pipe)
             left_iocm = parent_iocontext.child_context(left_ioargs)
-            try:
+            with write_pipe:
                 with left_iocm as iocontext:
-                    res = self._left._exec(iocontext)
-            finally:
-                print("ABOUT TO CLOSE LEFT WRITE PIPE", os.stat(write_fd))
-                os.close(write_fd)
-                print("CLOSED LEFT WRITE PIPE", os.stat(write_fd))
-            return res
+                    return self._left._exec(iocontext)
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
@@ -244,7 +234,6 @@ class Pipe(Expression):
             with right_iocm as iocontext:
                 right_status = self._right._exec(iocontext)
         left_status = left_thread.join()
-        print("CLOSED RIGHT READ PIPE")
 
         # Return the rightmost error, if any. Note that cwd and env changes
         # never propagate out of the pipe. This is the same behavior as bash.
