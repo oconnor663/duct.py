@@ -3,7 +3,7 @@
 import subprocess
 import threading
 import os
-import duct
+import time
 
 
 def open_pipe():
@@ -43,29 +43,31 @@ output_thread = threading.Thread(target=read_output)
 output_thread.start()
 
 
+run_event = threading.Event()
+
+
 def left():
     with input_read, pipe_write:
-        print("starting left cat...")
+        run_event.wait()
         subprocess.call(cat_cmd, stdin=input_read, stdout=pipe_write)
-        print("finished left cat, closing left pipes...")
-    print("left pipes closed.")
 left_thread = threading.Thread(target=left)
 left_thread.start()
 
-with pipe_read, output_write:
-    print('starting right cat...')
-    subprocess.run(cat_cmd, stdin=pipe_read, stdout=output_write)
-    print('finished right cat, closing right pipes...')
-print('right pipes closed.')
 
+def right():
+    with pipe_read, output_write:
+        run_event.wait()
+        subprocess.run(cat_cmd, stdin=pipe_read, stdout=output_write)
+right_thread = threading.Thread(target=right)
+right_thread.start()
+
+time.sleep(0.1)
+run_event.set()
+
+right_thread.join()
 left_thread.join()
 input_thread.join()
 output_thread.join()
 
 # Read from the output pipe buffer.
 print("got out:", out)
-
-print("trying the same thing with duct")
-
-out = duct.cmd(*cat_cmd).pipe(*cat_cmd).read(input='schwa')
-print("second time out:", out)
