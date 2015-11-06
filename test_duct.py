@@ -112,8 +112,8 @@ def test_nonzero_status_throws():
 
 def test_check():
     # Test both the top level and command level check params.
-    assert 1 == false().run(check=False).status
-    assert 0 == false(check=False).run().status
+    assert 1 == false().run(check=False).returncode
+    assert 0 == false(check=False).run().returncode
 
 
 def test_pipe():
@@ -283,10 +283,9 @@ def test_kwargs_prohibited_with_expression_value():
 
 
 def test_pipe_returns_rightmost_error():
-    assert 1 == true().pipe(false()).run(check=False).status
-    assert 1 == false().pipe(false()).run(check=False).status
-    assert (3 == false().pipe(exit_cmd(3)).run(check=False)
-            .status)
+    assert 1 == true().pipe(false()).run(check=False).returncode
+    assert 1 == false().pipe(false()).run(check=False).returncode
+    assert (3 == false().pipe(exit_cmd(3)).run(check=False).returncode)
 
 
 def test_checked_error_contains_status():

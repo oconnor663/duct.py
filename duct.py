@@ -60,8 +60,8 @@ class Expression:
         full_env: The complete map of environment variables with which to
                   execute the expression, which is not merged with os.environ.
                   This is what the subprocess module refers to as "env".
-        check: If False, return nonzero exit statuses as result.status, instead
-               of throwing an exception.
+        check: If False, return nonzero exit statuses as result.returncode,
+               instead of throwing an exception.
         trim: If True, trim trailing newlines from output captured by
               stdout=str or stderr=str. This is the same behavior as in bash's
               backticks or $(). Note that this never applies to output captured
@@ -103,14 +103,14 @@ def run_expression(expr, check, trim, ioargs):
     default_iocontext = IOContext()
     with default_iocontext.child_context(ioargs) as iocontext:
         # Kick off the child processes.
-        status = expr._exec(iocontext)
+        returncode = expr._exec(iocontext)
     stdout_result = iocontext.stdout_result()
     stderr_result = iocontext.stderr_result()
     if trim:
         stdout_result = trim_if_string(stdout_result)
         stderr_result = trim_if_string(stderr_result)
-    result = Result(status, stdout_result, stderr_result)
-    if check and status != 0:
+    result = Result(returncode, stdout_result, stderr_result)
+    if check and returncode != 0:
         raise CheckedError(result, expr)
     return result
 
@@ -145,8 +145,8 @@ class Command(Expression):
             proc = safe_popen(
                 command, cwd=cwd, env=full_env, stdin=iocontext.stdin_pipe,
                 stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe)
-        status = proc.wait()
-        return status if self._check else 0
+        returncode = proc.wait()
+        return returncode if self._check else 0
 
 
 class ShellCommand(Expression):
@@ -166,8 +166,8 @@ class ShellCommand(Expression):
                 shell_str, shell=True, cwd=cwd, env=full_env,
                 stdin=iocontext.stdin_pipe, stdout=iocontext.stdout_pipe,
                 stderr=iocontext.stderr_pipe)
-        status = proc.wait()
-        return status if self._check else 0
+        returncode = proc.wait()
+        return returncode if self._check else 0
 
 
 class Subshell(Expression):
@@ -178,8 +178,8 @@ class Subshell(Expression):
 
     def _exec(self, parent_iocontext):
         with parent_iocontext.child_context(self._ioargs) as iocontext:
-            status = self._expr._exec(iocontext)
-        return status if self._check else 0
+            returncode = self._expr._exec(iocontext)
+        return returncode if self._check else 0
 
 
 class Then(Expression):
@@ -244,7 +244,7 @@ class Pipe(Expression):
             return left_status
 
 
-Result = namedtuple('Result', ['status', 'stdout', 'stderr'])
+Result = namedtuple('Result', ['returncode', 'stdout', 'stderr'])
 
 
 class CheckedError(subprocess.CalledProcessError):
@@ -254,7 +254,7 @@ class CheckedError(subprocess.CalledProcessError):
 
     def __str__(self):
         return 'Command "{0}" returned non-zero exit status {1}.'.format(
-            self.command, self.result.status)
+            self.command, self.result.returncode)
 
 
 def trim_if_string(x):
