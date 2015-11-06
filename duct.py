@@ -582,9 +582,8 @@ def safe_popen(*args, **kwargs):
     we're safe. However, the Windows implementation of subprocess.Popen()
     creates temporary inheritable copies of its descriptors, and these can
     leak. The workaround for this is to protect Popen() with a global lock. See
-    https://bugs.python.org/issue25565.
-    '''
+    https://bugs.python.org/issue25565.'''
 
     close_fds = (os.name != 'nt')
     with popen_lock:
-        return subprocess.Popen(*args, **kwargs, close_fds=close_fds)
+        return subprocess.Popen(*args, close_fds=close_fds, **kwargs)
