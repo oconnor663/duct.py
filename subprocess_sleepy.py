@@ -1210,6 +1210,8 @@ class Popen(object):
 
             # Start the process
             try:
+                import time
+                time.sleep(0.1)
                 hp, ht, pid, tid = _winapi.CreateProcess(executable, args,
                                          # no special security
                                          None, None,
@@ -1218,6 +1220,7 @@ class Popen(object):
                                          env,
                                          cwd,
                                          startupinfo)
+                time.sleep(0.1)
             finally:
                 # Child is launched. Close the parent's copy of those pipe
                 # handles that only the child should have open.  You need
