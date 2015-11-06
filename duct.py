@@ -138,14 +138,14 @@ class Command(Expression):
         self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
+        command = stringify_paths_in_list(self._tuple)
         with parent_iocontext.child_context(self._ioargs) as iocontext:
-            command = stringify_paths_in_list(self._tuple)
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
-            status = subprocess.call(
-                command, stdin=iocontext.stdin_pipe,
-                stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
-                cwd=cwd, env=full_env, close_fds=should_close_fds())
+            proc = safe_popen(
+                command, cwd=cwd, env=full_env, stdin=iocontext.stdin_pipe,
+                stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe)
+        status = proc.wait()
         return status if self._check else 0
 
 
@@ -158,14 +158,15 @@ class ShellCommand(Expression):
         self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
+        shell_str = stringify_if_path(self._shell_cmd)
         with parent_iocontext.child_context(self._ioargs) as iocontext:
-            shell_str = stringify_if_path(self._shell_cmd)
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
-            status = subprocess.call(
-                shell_str, shell=True, stdin=iocontext.stdin_pipe,
-                stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe,
-                cwd=cwd, env=full_env, close_fds=should_close_fds())
+            proc = safe_popen(
+                shell_str, shell=True, cwd=cwd, env=full_env,
+                stdin=iocontext.stdin_pipe, stdout=iocontext.stdout_pipe,
+                stderr=iocontext.stderr_pipe)
+        status = proc.wait()
         return status if self._check else 0
 
 
@@ -564,13 +565,26 @@ def stringify_paths_in_dict(d):
                 for key, val in d.items())
 
 
-def should_close_fds():
-    # This was fun to debug >.< Before Python 3.2 on POSIX systems, os.pipe()
-    # fd's are inheritable. So for example in `echo hi | cat`, cat might
-    # receive a write handle for its own stdin, which means it will never read
-    # EOF, and the command will hang forever. The fix for this is the close_fds
-    # flag in the subprocess module. But we have to be careful not to set that
-    # flag on Windows, because it's not allowed with non-None
-    # stdin/stdout/stderr values. Luckily pipes were never inheritable on
-    # Windows.
-    return os.name != 'nt'
+popen_lock = threading.Lock()
+
+
+def safe_popen(*args, **kwargs):
+    '''This wrapper works around two major deadlock issues to do with pipes.
+    The first is that, before Python 3.2 on POSIX systems, os.pipe() created
+    inheritable file descriptors, which leak to both sides of the pipe and
+    prevent reads from reaching EOF. The workaround for this is to set
+    close_fds=True on POSIX, which was not the default in those versions. See
+    PEP 0446 for many details.
+
+    The second issue arises on Windows, where we're not allowed to set
+    close_fds=True while also setting stdin/stdout/stderr. Descriptors from
+    os.pipe() on Windows have never been inheritable, so it would seem that
+    we're safe. However, the Windows implementation of subprocess.Popen()
+    creates temporary inheritable copies of its descriptors, and these can
+    leak. The workaround for this is to protect Popen() with a global lock. See
+    https://bugs.python.org/issue25565.
+    '''
+
+    close_fds = (os.name != 'nt')
+    with popen_lock:
+        return subprocess.Popen(*args, **kwargs, close_fds=close_fds)
