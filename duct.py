@@ -544,7 +544,7 @@ def make_full_env(parent_env, env, full_env):
     it's by far the most common use case), and the 'full_env' parameter to
     supply the entire environment. Callers shouldn't supply both in one place,
     but it's possible for parameters on individual commands to edit or override
-    what's given to run(). We also convert pathlib Paths to strings.'''
+    what's given to run().'''
     if full_env is not None:
         return full_env
     ret = os.environ.copy() if parent_env is None else parent_env.copy()
