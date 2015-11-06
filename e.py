@@ -24,23 +24,26 @@ import os
 pipe_read, pipe_write = os.pipe()
 
 
-# Launch the left half of the pipe in a separate thread.
+# Launch the left half of the pipe in a separate thread. With the right timing,
+# this will overlap with the Popen below, and the each child will inherit the
+# other's files.
 def start_echo_foo():
     echo_foo_cmd = ['python', '-c', 'print("foo")']
     proc = Popen(echo_foo_cmd, stdout=pipe_write)
-    proc.wait()
     os.close(pipe_write)
+    proc.wait()
 thread = threading.Thread(target=start_echo_foo)
 thread.start()
 
 
-# Launch the right half of the pipe here in the main thread.
+# Launch the right half of the pipe here in the main thread. If this inherits
+# an extra copy of pipe_write, the read() in the child will block forever.
 cat_cmd = ['python', '-c', 'import sys; sys.stdout.write(sys.stdin.read())']
 proc = Popen(cat_cmd, stdin=pipe_read, stdout=PIPE)
-out, _ = proc.communicate()  # <--- This can deadlock on Windows!
 os.close(pipe_read)
+print("This might block forever...")
+output, _ = proc.communicate()
 
 thread.join()
 
-# Read from the output pipe buffer.
-print("got out:", out)
+print("Phew, we made it:", output)
