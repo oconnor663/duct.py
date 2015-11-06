@@ -73,6 +73,7 @@ def setup():
 
 
 def teardown():
+    # TODO: This could miss a leaked fd with a higher number. Find another way.
     with open(os.devnull) as f:
         new_fd = f.fileno()
     assert next_fd == new_fd, "We leaked a file descriptor!"
@@ -225,16 +226,19 @@ def test_stdout():
     # with a file path
     temp = mktemp()
     sh('echo hi').run(stdout=temp)
-    assert 'hi\n' == open(temp).read()
+    with open(temp) as f:
+        assert 'hi\n' == f.read()
     # with a Path path
     if has_pathlib:
         temp = mktemp()
         sh('echo hi').run(stdout=Path(temp))
-        assert 'hi\n' == open(temp).read()
+        with open(temp) as f:
+            assert 'hi\n' == f.read()
     # with an open file
     temp = mktemp()
     sh('echo hi').run(stdout=temp)
-    assert 'hi\n' == open(temp).read()
+    with open(temp) as f:
+        assert 'hi\n' == f.read()
     # with explicit DEVNULL
     out = sh('echo hi', stdout=DEVNULL).read()
     assert '' == out
