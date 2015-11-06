@@ -10,9 +10,10 @@ install:
   - pip install pytest pytest-cov coveralls
 script:
   # First run tests without installing pathlib. Use this run for coverage.
-  - py.test -v test_duct.py --cov=duct.py
+  - py.test test_duct.py --cov=duct.py
   # Then test again with pathlib installed. (Redundant on Python 3.4+.)
+  - echo -e '***\n*** RERUNNING TESTS WITH PATHLIB\n***'
   - pip install pathlib
-  - py.test -v test_duct.py
+  - py.test test_duct.py
 after_success:
   - coveralls

@@ -257,7 +257,8 @@ def test_commands_can_be_paths():
     if has_pathlib:
         tempdir = tempfile.mkdtemp()
         path = Path(tempdir, "script.bat")
-        with path.open('w') as f:
+        # Note that Path.open() rejects Python 2 non-unicode strings.
+        with open(str(path), 'w') as f:
             if os.name == 'nt':
                 f.write('@echo off\n')
             else:
