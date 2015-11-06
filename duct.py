@@ -272,7 +272,8 @@ def trim_if_string(x):
 
 def open_pipe(binary=False):
     read_fd, write_fd = os.pipe()
-    read_mode, write_mode = ('rb', 'wb') if binary else ('r', 'w')
+    # The 'rU' mode is the Python-2-compatible way to get universal newlines.
+    read_mode, write_mode = ('rb', 'wb') if binary else ('rU', 'w')
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
 
 
@@ -521,7 +522,9 @@ def wants_output_reader(output_arg):
 
 @contextmanager
 def spawn_output_reader(output_arg):
-    read, write = open_pipe(binary=output_arg is bytes)
+    # In Python 2, str and bytes are the same type. Default to text mode in
+    # this case.
+    read, write = open_pipe(binary=output_arg is not str)
 
     def read_thread():
         with read:
