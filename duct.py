@@ -97,6 +97,19 @@ class Expression:
         return Subshell(self, check, ioargs)
 
 
+Result = namedtuple('Result', ['returncode', 'stdout', 'stderr'])
+
+
+class CheckedError(subprocess.CalledProcessError):
+    def __init__(self, result, command):
+        self.result = result
+        self.command = command
+
+    def __str__(self):
+        return 'Command "{0}" returned non-zero exit status {1}.'.format(
+            self.command, self.result.returncode)
+
+
 # Implementation Details
 # ======================
 
@@ -245,19 +258,6 @@ class Pipe(Expression):
             return right_status
         else:
             return left_status
-
-
-Result = namedtuple('Result', ['returncode', 'stdout', 'stderr'])
-
-
-class CheckedError(subprocess.CalledProcessError):
-    def __init__(self, result, command):
-        self.result = result
-        self.command = command
-
-    def __str__(self):
-        return 'Command "{0}" returned non-zero exit status {1}.'.format(
-            self.command, self.result.returncode)
 
 
 def trim_if_string(x):
