@@ -341,3 +341,8 @@ def test_write_error_in_input_thread():
     BrokenPipeError.'''
     test_input = '\x00' * 100 * 1000
     true().run(input=test_input)
+
+
+def test_bytes_dont_trim():
+    out = sh("echo hi").read(stdout=BYTES)
+    assert out == b"hi\n"
