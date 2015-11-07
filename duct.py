@@ -282,11 +282,11 @@ class ThreadWithReturn(threading.Thread):
     value of the target function, or to see any exceptions that might've gotten
     thrown. This is a thin wrapper around Thread that enhances the join
     function to return values and reraise exceptions.'''
-    def __init__(self, target, args=(), kwargs={}, **thread_kwargs):
+    def __init__(self, target, args=(), kwargs=None, **thread_kwargs):
         threading.Thread.__init__(self, **thread_kwargs)
         self._target = target
         self._args = args
-        self._kwargs = kwargs
+        self._kwargs = kwargs or {}
         self._return = None
         self._exception = None
 
