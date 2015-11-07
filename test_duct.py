@@ -352,4 +352,8 @@ def test_string_mode_returns_unicode():
 
 def test_bytes_dont_trim():
     out = sh("echo hi").read(stdout=BYTES)
-    assert out == b"hi\n"
+    if os.name == 'nt':
+        expected = b"hi\r\n"
+    else:
+        expected = b"hi\n"
+    assert out == expected
