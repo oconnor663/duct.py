@@ -21,6 +21,8 @@ STDOUT = -2
 DEVNULL = -3
 # not defined in subprocess (values may change)
 STDERR = -4
+STRING = -5
+BYTES = -6
 
 
 def cmd(prog, *args, **cmd_kwargs):
@@ -45,11 +47,11 @@ class Expression:
         stdin: Directly set the expression's stdin pipe. Incompatible with
                "input". Can be a file object, a file descriptor, a filepath as
                a string or Path, or DEVNULL.
-        stdout: Similar to stdin. Supports STDERR. Setting stdout=str or
+        stdout: Similar to stdin. Supports STDERR. Setting stdout=STRING or
                 stdout=bytes means capturing stdout as the appropriate type and
                 returning is as result.stdout. A read thread is spawned to
                 handle this.
-        stderr: Similar to stdout. Supports STDOUT. Setting stderr=str or
+        stderr: Similar to stdout. Supports STDOUT. Setting stderr=STRING or
                 stderr=bytes causes the captured output to wind up on
                 result.stderr.
         cwd: The working directory where the expression runs.
@@ -63,17 +65,18 @@ class Expression:
         check: If False, return nonzero exit statuses as result.returncode,
                instead of throwing an exception.
         trim: If True, trim trailing newlines from output captured by
-              stdout=str or stderr=str. This is the same behavior as in bash's
-              backticks or $(). Note that this never applies to output captured
-              as bytes.
+              stdout=STRING or stderr=STRING. This is the same behavior as in
+              bash's backticks or $(). Note that this never applies to output
+              captured as bytes.
         '''
         check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
         return run_expression(self, check, trim, ioargs)
 
-    def read(self, stdout=str, trim=True, **run_kwargs):
+    def read(self, stdout=STRING, trim=True, **run_kwargs):
         '''Captures output from an expression, similar to backticks or $() in
-        the shell. This is just a wrapper around run(), which sets stdout=str
-        and trim=True, and then returns result.stdout instead of result.'''
+        the shell. This is just a wrapper around run(), which sets
+        stdout=STRING and trim=True, and then returns result.stdout instead of
+        result.'''
         result = self.run(stdout=stdout, trim=trim, **run_kwargs)
         return result.stdout
 
@@ -517,14 +520,13 @@ def spawn_input_writer(input_arg):
 
 
 def wants_output_reader(output_arg):
-    return output_arg is str or output_arg is bytes
+    return output_arg in (STRING, BYTES)
 
 
 @contextmanager
 def spawn_output_reader(output_arg):
-    # In Python 2, str and bytes are the same type. Default to text mode in
-    # this case.
-    read, write = open_pipe(binary=output_arg is not str)
+    binary_mode = (output_arg == BYTES)
+    read, write = open_pipe(binary_mode)
 
     def read_thread():
         with read:

@@ -7,7 +7,7 @@ import textwrap
 from pytest import raises
 
 import duct
-from duct import cmd, sh, DEVNULL, STDOUT, STDERR
+from duct import cmd, sh, DEVNULL, STDOUT, STDERR, STRING, BYTES
 
 try:
     from pathlib import Path
@@ -97,12 +97,12 @@ def test_hello_world():
 
 
 def test_result():
-    result = sh('echo more stuff').run(stdout=str)
+    result = sh('echo more stuff').run(stdout=STRING)
     assert "more stuff\n" == result.stdout
 
 
 def test_bytes():
-    out = head(10).read(input="\x00"*100, stdout=bytes)
+    out = head(10).read(input="\x00"*100, stdout=BYTES)
     assert b'\x00'*10 == out
 
 
@@ -243,16 +243,16 @@ def test_stdout():
     out = sh('echo hi', stdout=DEVNULL).read()
     assert '' == out
     # to STDERR
-    result = sh('echo hi', stdout=STDERR).run(stdout=str, stderr=str)
+    result = sh('echo hi', stdout=STDERR).run(stdout=STRING, stderr=STRING)
     assert '' == result.stdout
     assert 'hi\n' == result.stderr
     # from stderr with STDOUT (note Windows would output any space before >)
-    result = sh('echo hi>&2', stderr=STDOUT).run(stdout=str, stderr=bytes)
+    result = sh('echo hi>&2', stderr=STDOUT).run(stdout=STRING, stderr=BYTES)
     assert 'hi\n' == result.stdout
     assert b'' == result.stderr
     # full swap
     result = (sh('echo hi&& echo lo>&2', stdout=STDERR, stderr=STDOUT)
-              .run(stdout=str, stderr=str))
+              .run(stdout=STRING, stderr=STRING))
     assert 'lo\n' == result.stdout
     assert 'hi\n' == result.stderr
 
@@ -311,7 +311,7 @@ def test_ThreadWithReturn_reraises_exceptions():
 
 def test_getting_reader_output_before_join_throws():
     default_context = duct.IOContext()
-    _, ioargs = duct.parse_cmd_kwargs(stdout=str, stderr=str)
+    _, ioargs = duct.parse_cmd_kwargs(stdout=STRING, stderr=STRING)
     with default_context.child_context(ioargs) as iocontext:
         with raises(RuntimeError):
             iocontext.stdout_result()
