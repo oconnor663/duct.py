@@ -267,7 +267,8 @@ def trim_if_string(x):
         # Does the user want this trimmed, or did they just forget trim=False?
         cmd('head -c 10 /dev/urandom').read(stdout=bytes)
     '''
-    if isinstance(x, str):
+    # Check for str in Python 3, unicode in Python 2.
+    if isinstance(x, type(u'')):
         return x.rstrip('\n')
     else:
         return x
@@ -530,7 +531,11 @@ def spawn_output_reader(output_arg):
 
     def read_thread():
         with read:
-            return read.read()
+            out = read.read()
+            # In Python 2, we have to explicitly decode to unicode.
+            if not binary_mode and not isinstance(out, type(u'')):
+                out = out.decode('utf8')
+            return out
     thread = ThreadWithReturn(read_thread)
     thread.start()
     with write:

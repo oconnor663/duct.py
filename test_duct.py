@@ -343,6 +343,13 @@ def test_write_error_in_input_thread():
     true().run(input=test_input)
 
 
+def test_string_mode_returns_unicode():
+    '''In Python 2, reading a file in text mode still returns a raw string,
+    instead of a unicode string. Make sure we convert.'''
+    out = sh('echo hi').read()
+    assert isinstance(out, type(u''))
+
+
 def test_bytes_dont_trim():
     out = sh("echo hi").read(stdout=BYTES)
     assert out == b"hi\n"
