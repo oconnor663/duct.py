@@ -10,14 +10,14 @@ But always be explicit about what happens to output.
 ```python
 from duct import cmd, sh
 
-# Read the name of the current branch.
+# Read the name of the current git branch.
 current_branch = sh('git symbolic-ref --short HEAD').read()
 
 # Log the current branch, with git taking over the terminal as usual.
 cmd('git', 'log', current_branch).run()
 ```
 
-That's equivalent to the following (Python 3.5):
+That's exactly the same as the following in standard Python 3.5:
 
 ```python
 from subprocess import run, PIPE
@@ -32,13 +32,16 @@ run(['git', 'log', current_branch])
 
 ## Crazy things should be possible.
 
-Bash:
+Sometimes you have to write ridiculous pipelines in bash:
 
 ```bash
 (echo error >&2 && echo output) 2>&1 | grep stuff
 ```
 
-Duct:
+The duct version is longer, but duct expressions are composable objects,
+so you don't have to write the whole thing in one go. Note that `then`
+and `pipe` accept the same arguments as `cmd`, but they can also accept
+other duct expressions, like `sh` in this example:
 
 ```python
 from duct import cmd, sh, STDOUT, STDERR
@@ -48,31 +51,31 @@ pipeline = echoes.subshell(stderr=STDOUT).pipe(sh('grep stuff'))
 pipeline.run()
 ```
 
-The duct version is longer, but the commands are composable objects, so
-you don't have to do the whole thing in one line. Note that `then` and
-`pipe` accept the same arguments as `cmd`, but they can also accept any
-other duct expression, like `sh` in this example.
-
 
 ## Errors should never pass silently.
 
-Because `grep` returns an error, this will raise an exception:
+Because `grep` in the example above doesn't match any lines, it's going
+to return an error. In duct, that means `run` is going to raise an
+exception. To prevent that, use `check=False`. If you pass that argument
+to `run`, the command's exit status will be the `returncode` attribute
+on the result, just like `subprocess.run` in Python 3.5. If you pass it
+to `cmd` or to another part of a duct expression, it will force that
+part's exit status to be `0`, though other parts could still return
+errors.
 
 ```python
-sh('grep foo').run(input="bar")
+result = cmd('false').run(check=False)
+print(result.returncode)  # 1
+
+result = cmd('false', check=False).run()
+print(result.returncode)  # 0
 ```
 
-If you want to do that without an exception, you have to use
-`check=True` either with command (which forces it to return `0`) or to
-the `run` method (which preserves the returncode but suppresses the
-exception).
-
-Note that duct treats errors in pipes like bash's `pipefail` option:
-they count even when they happen on the left. This can be confusing in
-cases where we're used to errors being hidden. For example in the
-following command, `cat` returns an error when its stdout closes:
+Note that duct treats errors in a pipe like bash's `pipefail` option:
+they count even when they happen on the left. This can be surprising in
+cases where we usually ignore errors. In the following example, `cat`
+returns an error because its stdout is closed:
 
 ```python
-from duct import cmd, BYTES
-cmd('cat', stdin='/dev/urandom').pipe('head', '-c', '10').read(stdout=BYTES)
+cmd('cat', stdin='/dev/urandom').pipe('true').read()
 ```
