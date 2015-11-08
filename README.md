@@ -80,3 +80,116 @@ returns an error because its stdout is closed:
 # Raises an exception, because cat returns an error.
 cmd('cat', stdin='/dev/urandom').pipe('true').read()
 ```
+
+
+## Work with pathlib.
+If you have `Path` objects, you can use them anywhere you would use a
+string.
+
+```python
+from duct import cmd
+from pathlib import Path
+
+myscript = Path('foo')
+mydir = Path('bar')
+cmd(myscript).run(cwd=mydir)
+```
+
+
+## Reference
+
+### Top level functions
+##### `cmd(program, *args, **kwargs)`
+Create a command expression from a program name and optional arguments.
+This doesn't require any escaping of special characters or whitespace.
+If your arguments are anything other than constant strings, this is
+definitely what you want to use.
+##### `sh(shell_command, **kwargs)`
+Create a command expression from a string of shell code, executed with
+the `shell=True` flag in the `subprocess` module. This can spare you
+from typing a lot of quote characters, or even whole pipelines, but
+please don't use it with anything other than a constant command string,
+because shell escaping is tricky.
+
+### Expression methods
+
+##### `run(**kwargs)`
+Execute the expression and return a `Result` object, which has fields
+`stdout`, `stderr`, and `returncode`. If output isn't captured, `stdout`
+and `stderr` will be `None`. If the expression has a non-zero
+returncode, `run` will raise an exception. Use `check=False` to allow
+non-zero returncodes.
+##### `read(**kwargs)`
+Execute the expression and capture its output, similar to backticks or
+`$()` in bash. This is a wrapper around `run`, which sets
+`stdout=STRING` and `trim=True` and returns the `stdout` field of the
+result.
+##### `pipe(*command_or_expression, **kwargs)`
+Create a pipe expression, similar to `|` in bash. The the right side can
+be a command with the same syntax as `cmd`. It can also by another duct
+expression, in which case no additional arguments are allowed. If you
+want to use `sh` syntax on the right side of a pipe, write
+`foo.pipe(sh("bar"))`. The returncode of a pipe expression is equal to
+the right side's returncode if it's nonzero, otherwise the left side's.
+##### `then(*command_or_expression, **kwargs)`
+Creates a sequence expression, similar to `&&` in bash, with syntax like
+`pipe` above. The left side runs, and then if its returncode is zero,
+the right side runs. If you want to ignore errors on the left side,
+similar to `;` in bash, use `check=False` inside the left expression.
+##### `subshell(**kwargs)`
+Apply redirections or other arguments to an already-formed expression,
+similar to `()` in bash. You don't usually need this; instead you can
+pass these arguments to `run` or to individual commands. `subshell` is
+useful when you're composing expressions that were created in some other
+part of your program, or when you're translating absurd bash pipelines.
+
+### Keyword arguments
+
+Except where noted, all of these are valid as arguments both to the
+`run` and `read` methods (the "run level"), and to individual commands
+(the "expression level"). Arguments given at the expression level will
+generally override arguments given to containing expressions or at the
+run level.
+
+##### `input`
+A string or bytes object to write directly to standard input.
+##### `stdin`
+A file or pipe to use in place of the default standard input.
+Incompatible with `input`. It can be a string/bytes/pathlib filepath to
+open, an already open file or descriptor, or `DEVNULL`.
+##### `stdout`
+Similar to `stdin`, a filepath or a file to use in place of the default
+standard output. Supports `DEVNULL`. Also supports `STDERR`. (Note that
+if you're setting `stderr` in the same expression, `STDERR` refers to
+the old value, not the new value you're setting.) Also supports `STRING`
+and `BYTES`, which cause output to be captured and stored as the
+`stdout` field of the `Result` object returned by `run`. (`STRING` and
+`BYTES` are only meaningful at the run level.)
+##### `stderr`
+Similar to stdout. Also supports `STDOUT`, which behaves like `STDERR`.
+Output captured with `STRING` or `BYTES` is stored as the `stderr` field
+of the `Result` object returned by `run`.
+##### `cwd`
+The working directory of the child process. The default is the working
+directory of the parent.
+##### `env`
+A map of environment variables set for the child process. Note that this
+is *in addition* to what's in `os.environ`, unlike the "env" parameter
+from the `subprocess` module. Using `env` at both the run level and the
+expression level is cumulative. If you set the same variable twice
+though, the expression level wins.
+##### `full_env`
+The complete map of environment variables for the child process, which
+will not be merged with `os.environ`. This is what the `subprocess`
+module calls "env". Setting `full_env` at the expression level wipes out
+any other variables set with `env` or `full_env` at the run level.
+##### `check`
+Defaults to `True`. If `False` at the expression level, that expression
+always returns exit status `0`. If `False` at the run level, `run` will
+return results with a nonzero `returncode`, instead of raising an
+exception.
+##### `trim`
+Defaults to `False`. If `True`, trailing newlines will be stripped from
+output captured with `STRING`. This is the same behavior as backticks or
+`$()` in bash. Output captured as `BYTES` is never trimmed. Only valid
+at the run level.

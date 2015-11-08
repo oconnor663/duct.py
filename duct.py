@@ -39,44 +39,16 @@ class Expression:
     'Abstract base class for all expression types.'
 
     def run(self, trim=False, **cmd_kwargs):
-        '''Start running an expression, wait for it to finish, and return a
-        Result. This takes a number of arguments:
-
-        input: A string or bytes object to write directly to the expression's
-               standard input. A thread is spawned to handle this.
-        stdin: Directly set the expression's stdin pipe. Incompatible with
-               "input". Can be a file object, a file descriptor, a filepath as
-               a string or Path, or DEVNULL.
-        stdout: Similar to stdin. Supports STDERR. Setting stdout=STRING or
-                stdout=bytes means capturing stdout as the appropriate type and
-                returning is as result.stdout. A read thread is spawned to
-                handle this.
-        stderr: Similar to stdout. Supports STDOUT. Setting stderr=STRING or
-                stderr=bytes causes the captured output to wind up on
-                result.stderr.
-        cwd: The working directory where the expression runs.
-        env: A map of environment variables ({name: value}) that should be set
-             before the expression is run. Note that this is *in addition* to
-             what's in os.environ, unlike the "env" parameter from the
-             subprocess module.
-        full_env: The complete map of environment variables with which to
-                  execute the expression, which is not merged with os.environ.
-                  This is what the subprocess module refers to as "env".
-        check: If False, return nonzero exit statuses as result.returncode,
-               instead of throwing an exception.
-        trim: If True, trim trailing newlines from output captured by
-              stdout=STRING or stderr=STRING. This is the same behavior as in
-              bash's backticks or $(). Note that this never applies to output
-              captured as bytes.
-        '''
+        '''Execute the expression and return a Result. Raise an exception if
+        the returncode is non-zero, unless `check` is False.'''
         check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
         return run_expression(self, check, trim, ioargs)
 
     def read(self, stdout=STRING, trim=True, **run_kwargs):
-        '''Captures output from an expression, similar to backticks or $() in
-        the shell. This is just a wrapper around run(), which sets
+        '''Execute the expression and capture its output, similar to backticks
+        or $() in the shell. This is a wrapper around run(), which sets
         stdout=STRING and trim=True, and then returns result.stdout instead of
-        result.'''
+        the whole result.'''
         result = self.run(stdout=stdout, trim=trim, **run_kwargs)
         return result.stdout
 
