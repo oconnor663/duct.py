@@ -48,7 +48,7 @@ from duct import cmd, sh, STDOUT, STDERR
 
 echoes = cmd('echo', 'error', stdout=STDERR).then('echo', 'output')
 pipeline = echoes.subshell(stderr=STDOUT).pipe(sh('grep stuff'))
-pipeline.run()
+pipeline.run()  # This raises an exception! See below.
 ```
 
 
@@ -77,5 +77,6 @@ cases where we usually ignore errors. In the following example, `cat`
 returns an error because its stdout is closed:
 
 ```python
+# Raises an exception, because cat returns an error.
 cmd('cat', stdin='/dev/urandom').pipe('true').read()
 ```
