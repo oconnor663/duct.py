@@ -48,20 +48,19 @@ from duct import cmd, sh, STDOUT, STDERR
 
 echoes = cmd('echo', 'error', stdout=STDERR).then('echo', 'output')
 pipeline = echoes.subshell(stderr=STDOUT).pipe(sh('grep stuff'))
-pipeline.run()  # This raises an exception! See below.
+output = pipeline.read()  # This raises an exception! See below.
 ```
 
 
 ## Errors should never pass silently.
 
 Because `grep` in the example above doesn't match any lines, it's going
-to return an error. In duct, that means `run` is going to raise an
-exception. To prevent that, use `check=False`. If you pass that argument
-to `run`, the command's exit status will be the `returncode` attribute
-on the result, just like `subprocess.run` in Python 3.5. If you pass it
-to `cmd` or to another part of a duct expression, it will force that
-part's exit status to be `0`, though other parts could still return
-errors.
+to return an error, and duct will raise an exception. To prevent that,
+use `check=False`. If you pass that argument to `run`, the command's
+exit status will be the `returncode` attribute on the result, just like
+`subprocess.run` in Python 3.5. If you pass it to `cmd` or to another
+part of a duct expression, it will force that part's exit status to be
+`0`, though other parts could still return errors.
 
 ```python
 result = cmd('false').run(check=False)
