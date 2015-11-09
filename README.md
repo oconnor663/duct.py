@@ -97,8 +97,8 @@ cmd(myscript).run(cwd=mydir)
 
 ## Reference
 
-All of these functions take the same keyword arguments, [see
-below](#Keyword arguments).
+Every duct function takes the same keyword arguments, [see
+below](#keyword-arguments).
 
 ### Top level functions
 ##### `cmd(program, *program_args, **kwargs)`
