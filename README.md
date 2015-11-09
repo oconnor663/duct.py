@@ -55,12 +55,12 @@ output = pipeline.read()  # This raises an exception! See below.
 ## Errors should never pass silently.
 
 Because `grep` in the example above doesn't match any lines, it's going
-to return an error, and duct will raise an exception. To prevent the
-exception, use `check=False`. If you pass that argument to `run`, the
-command's exit status will be the `returncode` attribute on the result,
-just like `subprocess.run` in Python 3.5. If you pass it to `cmd` or to
-another part of a duct expression, it will force that part's exit status
-to be `0`, though other parts could still return errors.
+to return an error code, and duct will raise an exception. To prevent
+the exception, use `check=False`. If you pass that to `run`, the
+expression's exit status will be the `returncode` attribute on the
+result, just like `subprocess.run` in Python 3.5. If you pass it to part
+of an expression, like `cmd`, it will force just that part to return
+`0`, though other parts could still return errors.
 
 ```python
 result = cmd('false').run(check=False)
@@ -97,11 +97,14 @@ cmd(myscript).run(cwd=mydir)
 
 ## Reference
 
+All of these functions take the same keyword arguments, [see
+below](#Keyword arguments).
+
 ### Top level functions
-##### `cmd(program, *args, **kwargs)`
+##### `cmd(program, *program_args, **kwargs)`
 Create a command expression from a program name and optional arguments.
-This doesn't require any escaping of special characters or whitespace.
-If your arguments are anything other than constant strings, this is
+This doesn't require escaping any special characters or whitespace. If
+your arguments are anything other than constant strings, this is
 definitely what you want to use.
 ##### `sh(shell_command, **kwargs)`
 Create a command expression from a string of shell code, executed with
@@ -136,7 +139,7 @@ Creates a sequence expression, similar to `&&` in bash, with syntax like
 the right side runs. If you want to ignore errors on the left side,
 similar to `;` in bash, use `check=False` inside the left expression.
 ##### `subshell(**kwargs)`
-Apply redirections or other arguments to an already-formed expression,
+Apply redirections or other keywords to an already-formed expression,
 similar to `()` in bash. You don't usually need this; instead you can
 pass these arguments to `run` or to individual commands. `subshell` is
 useful when you're composing expressions that were created in some other
