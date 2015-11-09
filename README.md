@@ -101,12 +101,16 @@ Every duct function takes the same keyword arguments, [see
 below](#keyword-arguments).
 
 ### Top level functions
-##### `cmd(program, *program_args, **kwargs)`
+
+<strong><tt>cmd</tt></strong>(<em>program, \*program_args, \*\*kwargs</em>)
+
 Create a command expression from a program name and optional arguments.
 This doesn't require escaping any special characters or whitespace. If
 your arguments are anything other than constant strings, this is
 definitely what you want to use.
-##### `sh(shell_command, **kwargs)`
+
+<strong><tt>sh</tt></strong>(<em>shell_command, \*\*kwargs</em>)
+
 Create a command expression from a string of shell code, executed with
 the `shell=True` flag in the `subprocess` module. This can spare you
 from typing a lot of quote characters, or even whole pipelines, but
@@ -115,30 +119,39 @@ because shell escaping is tricky.
 
 ### Expression methods
 
-##### `run(**kwargs)`
+<strong><tt>run</tt></strong>(<em>\*\*kwargs</em>)
+
 Execute the expression and return a `Result` object, which has fields
 `stdout`, `stderr`, and `returncode`. If output isn't captured, `stdout`
 and `stderr` will be `None`. If the expression has a non-zero
 returncode, `run` will raise an exception. Use `check=False` to allow
 non-zero returncodes.
-##### `read(**kwargs)`
+
+<strong><tt>read</tt></strong>(<em>\*\*kwargs</em>)
+
 Execute the expression and capture its output, similar to backticks or
 `$()` in bash. This is a wrapper around `run`, which sets
 `stdout=STRING` and `trim=True` and returns the `stdout` field of the
 result.
-##### `pipe(*command_or_expression, **kwargs)`
+
+<strong><tt>pipe</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
+
 Create a pipe expression, similar to `|` in bash. The the right side can
 be a command with the same syntax as `cmd`. It can also by another duct
 expression, in which case no additional arguments are allowed. If you
 want to use `sh` syntax on the right side of a pipe, write
 `foo.pipe(sh("bar"))`. The returncode of a pipe expression is equal to
 the right side's returncode if it's nonzero, otherwise the left side's.
-##### `then(*command_or_expression, **kwargs)`
+
+<strong><tt>then</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
+
 Creates a sequence expression, similar to `&&` in bash, with syntax like
 `pipe` above. The left side runs, and then if its returncode is zero,
 the right side runs. If you want to ignore errors on the left side,
 similar to `;` in bash, use `check=False` inside the left expression.
-##### `subshell(**kwargs)`
+
+<strong><tt>subshell</tt></strong>(<em>\*\*kwargs</em>)
+
 Apply redirections or other keywords to an already-formed expression,
 similar to `()` in bash. You don't usually need this; instead you can
 pass these arguments to `run` or to individual commands. `subshell` is
@@ -153,13 +166,18 @@ Except where noted, all of these are valid as arguments both to the
 generally override arguments given to containing expressions or at the
 run level.
 
-##### `input`
+<strong><tt>input</tt></strong>
+
 A string or bytes object to write directly to standard input.
-##### `stdin`
+
+<strong><tt>stdin</tt></strong>
+
 A file or pipe to use in place of the default standard input.
 Incompatible with `input`. It can be a string/bytes/pathlib filepath to
 open, an already open file or descriptor, or `DEVNULL`.
-##### `stdout`
+
+<strong><tt>stdout</tt></strong>
+
 Similar to `stdin`, a filepath or a file to use in place of the default
 standard output. Supports `DEVNULL`. Also supports `STDERR`. Note that
 if you're setting `stderr` in the same expression, `STDERR` refers to
@@ -167,30 +185,42 @@ the old value, not the new value you're setting. Also supports `STRING`
 and `BYTES`, which cause output to be captured and stored as the
 `stdout` field of the `Result` object returned by `run`. `STRING` and
 `BYTES` are only meaningful at the run level.
-##### `stderr`
+
+<strong><tt>stderr</tt></strong>
+
 Similar to stdout. Also supports `STDOUT`, which behaves like `STDERR`.
 Output captured with `STRING` or `BYTES` is stored as the `stderr` field
 of the `Result` object returned by `run`.
-##### `cwd`
+
+<strong><tt>cwd</tt></strong>
+
 The working directory of the child process. The default is the working
 directory of the parent.
-##### `env`
+
+<strong><tt>env</tt></strong>
+
 A map of environment variables set for the child process. Note that this
 is *in addition* to what's in `os.environ`, unlike the "env" parameter
 from the `subprocess` module. Using `env` at both the run level and the
 expression level is cumulative. If you set the same variable twice
 though, the expression level wins.
-##### `full_env`
+
+<strong><tt>full_env</tt></strong>
+
 The complete map of environment variables for the child process, which
 will not be merged with `os.environ`. This is what the `subprocess`
 module calls "env". Setting `full_env` at the expression level wipes out
 any other variables set with `env` or `full_env` at the run level.
-##### `check`
+
+<strong><tt>check</tt></strong>
+
 Defaults to `True`. If `False` at the expression level, that expression
 always returns exit status `0`. If `False` at the run level, `run` will
 return results with a nonzero `returncode`, instead of raising an
 exception.
-##### `trim`
+
+<strong><tt>trim</tt></strong>
+
 Defaults to `False`. If `True`, trailing newlines will be stripped from
 output captured with `STRING`. This is the same behavior as backticks or
 `$()` in bash. Output captured as `BYTES` is never trimmed. Only valid
