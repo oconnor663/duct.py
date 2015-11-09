@@ -73,13 +73,13 @@ Result = namedtuple('Result', ['returncode', 'stdout', 'stderr'])
 
 
 class CheckedError(subprocess.CalledProcessError):
-    def __init__(self, result, command):
+    def __init__(self, result, expression):
         self.result = result
-        self.command = command
+        self.expression = expression
 
     def __str__(self):
-        return 'Command "{0}" returned non-zero exit status {1}.'.format(
-            self.command, self.result.returncode)
+        return 'Expression {0} returned non-zero exit status {1}.'.format(
+            self.expression, self.result.returncode)
 
 
 # Implementation Details
