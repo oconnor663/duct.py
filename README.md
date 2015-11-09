@@ -55,12 +55,12 @@ output = pipeline.read()  # This raises an exception! See below.
 ## Errors should never pass silently.
 
 Because `grep` in the example above doesn't match any lines, it's going
-to return an error, and duct will raise an exception. To prevent that,
-use `check=False`. If you pass that argument to `run`, the command's
-exit status will be the `returncode` attribute on the result, just like
-`subprocess.run` in Python 3.5. If you pass it to `cmd` or to another
-part of a duct expression, it will force that part's exit status to be
-`0`, though other parts could still return errors.
+to return an error, and duct will raise an exception. To prevent the
+exception, use `check=False`. If you pass that argument to `run`, the
+command's exit status will be the `returncode` attribute on the result,
+just like `subprocess.run` in Python 3.5. If you pass it to `cmd` or to
+another part of a duct expression, it will force that part's exit status
+to be `0`, though other parts could still return errors.
 
 ```python
 result = cmd('false').run(check=False)
@@ -158,12 +158,12 @@ Incompatible with `input`. It can be a string/bytes/pathlib filepath to
 open, an already open file or descriptor, or `DEVNULL`.
 ##### `stdout`
 Similar to `stdin`, a filepath or a file to use in place of the default
-standard output. Supports `DEVNULL`. Also supports `STDERR`. (Note that
+standard output. Supports `DEVNULL`. Also supports `STDERR`. Note that
 if you're setting `stderr` in the same expression, `STDERR` refers to
-the old value, not the new value you're setting.) Also supports `STRING`
+the old value, not the new value you're setting. Also supports `STRING`
 and `BYTES`, which cause output to be captured and stored as the
-`stdout` field of the `Result` object returned by `run`. (`STRING` and
-`BYTES` are only meaningful at the run level.)
+`stdout` field of the `Result` object returned by `run`. `STRING` and
+`BYTES` are only meaningful at the run level.
 ##### `stderr`
 Similar to stdout. Also supports `STDOUT`, which behaves like `STDERR`.
 Output captured with `STRING` or `BYTES` is stored as the `stderr` field
