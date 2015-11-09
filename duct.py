@@ -136,6 +136,10 @@ class Command(Expression):
         returncode = proc.wait()
         return returncode if self._check else 0
 
+    def __repr__(self):
+        return expression_repr('cmd', self._tuple, self._ioargs,
+                               check=self._check)
+
 
 class ShellCommand(Expression):
     def __init__(self, shell_cmd, check, ioargs):
@@ -157,6 +161,10 @@ class ShellCommand(Expression):
         returncode = proc.wait()
         return returncode if self._check else 0
 
+    def __repr__(self):
+        return expression_repr('sh', [self._shell_cmd], self._ioargs,
+                               check=self._check)
+
 
 class Subshell(Expression):
     def __init__(self, expr, check, ioargs):
@@ -168,6 +176,10 @@ class Subshell(Expression):
         with parent_iocontext.child_context(self._ioargs) as iocontext:
             returncode = self._expr._exec(iocontext)
         return returncode if self._check else 0
+
+    def __repr__(self):
+        return repr(self._expr) + '.' + expression_repr(
+            'subshell', [], self._ioargs, check=self._check)
 
 
 class Then(Expression):
@@ -184,6 +196,13 @@ class Then(Expression):
         # Otherwise execute the second command.
         right_status = self._right._exec(parent_iocontext)
         return right_status
+
+    def __repr__(self):
+        if isinstance(self._right, Command):
+            right_repr = repr(self._right).replace('cmd', 'then')
+        else:
+            right_repr = 'then(' + repr(self._right) + ')'
+        return repr(self._left) + '.' + right_repr
 
 
 # Pipe uses another thread to run the left side of the pipe in parallel with
@@ -230,6 +249,13 @@ class Pipe(Expression):
             return right_status
         else:
             return left_status
+
+    def __repr__(self):
+        if isinstance(self._right, Command):
+            right_repr = repr(self._right).replace('cmd', 'pipe')
+        else:
+            right_repr = 'pipe(' + repr(self._right) + ')'
+        return repr(self._left) + '.' + right_repr
 
 
 def trim_if_string(x):
@@ -545,6 +571,20 @@ def stringify_paths_in_list(l):
 def stringify_paths_in_dict(d):
     return dict((stringify_if_path(key), stringify_if_path(val))
                 for key, val in d.items())
+
+
+def expression_repr(name, args, ioargs, **kwargs):
+    '''Handle all the shared logic for printing expression arguments.'''
+    parts = [repr(i) for i in args]
+    kwargs.update(ioargs._asdict())
+    # Assume any keywords not listed default to None.
+    keyword_defaults = {'check': True}
+    # Only print fields with a non-default value. Also sort the keys
+    # alphabetically, so that the repr is stable for testing.
+    for key, val in sorted(kwargs.items()):
+        if val != keyword_defaults.get(key, None):
+            parts.append(key + '=' + repr(val))
+    return name + '(' + ', '.join(parts) + ')'
 
 
 popen_lock = threading.Lock()

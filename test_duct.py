@@ -357,3 +357,23 @@ def test_bytes_dont_trim():
     else:
         expected = b"hi\n"
     assert out == expected
+
+
+def test_repr_round_trip():
+    '''Check that our repr() output is exactly the same as the syntax used to
+    create hte expression. Note that expression_repr() sorts keywords
+    alphabetically, so we need to do the same here. Also, use single-quoted
+    string values, because that's what repr() emits, and don't use bytes
+    literals, because Python 2 won't emit them.'''
+
+    expressions = [
+        "cmd('foo', check=False, env={'x': 'y'})",
+        "sh('bar', check=False, input='stuff')",
+        "cmd('foo').subshell(check=False, full_env={})",
+        "cmd('foo').pipe('bar')",
+        "cmd('foo').pipe(sh('bar'))",
+        "cmd('foo').then('bar')",
+        "cmd('foo').then(sh('bar'))",
+    ]
+    for expression in expressions:
+        assert repr(eval(expression)) == expression
