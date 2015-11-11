@@ -361,7 +361,7 @@ def test_bytes_dont_trim():
 
 def test_repr_round_trip():
     '''Check that our repr() output is exactly the same as the syntax used to
-    create hte expression. Note that expression_repr() sorts keywords
+    create the expression. Note that expression_repr() sorts keywords
     alphabetically, so we need to do the same here. Also, use single-quoted
     string values, because that's what repr() emits, and don't use bytes
     literals, because Python 2 won't emit them.'''
@@ -374,6 +374,7 @@ def test_repr_round_trip():
         "cmd('foo').pipe(sh('bar'))",
         "cmd('foo').then('bar')",
         "cmd('foo').then(sh('bar'))",
+        "cmd('foo', input=DEVNULL, stderr=STDOUT, stdout=BYTES)",
     ]
     for expression in expressions:
         assert repr(eval(expression)) == expression

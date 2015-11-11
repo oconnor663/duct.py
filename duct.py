@@ -575,6 +575,13 @@ def stringify_paths_in_dict(d):
 
 def expression_repr(name, args, ioargs, **kwargs):
     '''Handle all the shared logic for printing expression arguments.'''
+    constants = {
+        STDOUT: "STDOUT",
+        DEVNULL: "DEVNULL",
+        STDERR: "STDERR",
+        STRING: "STRING",
+        BYTES: "BYTES",
+    }
     parts = [repr(i) for i in args]
     kwargs.update(ioargs._asdict())
     # Assume any keywords not listed default to None.
@@ -582,8 +589,13 @@ def expression_repr(name, args, ioargs, **kwargs):
     # Only print fields with a non-default value. Also sort the keys
     # alphabetically, so that the repr is stable for testing.
     for key, val in sorted(kwargs.items()):
+        if isinstance(val, int) and val < 0:
+            # A duct constant. Print its name.
+            val_repr = constants[val]
+        else:
+            val_repr = repr(val)
         if val != keyword_defaults.get(key, None):
-            parts.append(key + '=' + repr(val))
+            parts.append(key + '=' + val_repr)
     return name + '(' + ', '.join(parts) + ')'
 
 
