@@ -145,7 +145,7 @@ the right side's returncode if it's nonzero, otherwise the left side's.
 
 <strong><tt>then</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
 
-Creates a sequence expression, similar to `&&` in bash, with syntax like
+Create a sequence expression, similar to `&&` in bash, with syntax like
 `pipe` above. The left side runs, and then if its returncode is zero,
 the right side runs. If you want to ignore errors on the left side,
 similar to `;` in bash, use `check=False` inside the left expression.
