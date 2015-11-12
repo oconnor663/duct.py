@@ -378,3 +378,11 @@ def test_repr_round_trip():
     ]
     for expression in expressions:
         assert repr(eval(expression)) == expression
+
+
+def test_swap_and_redirect_at_same_time():
+    '''We need to make sure that setting e.g. stderr=STDOUT while also setting
+    stdout=STRING means that stderr joins the redirected stdout, rather than
+    joining what stdout used to be.'''
+    err_out = sh('echo hi>&2').read(stderr=STDOUT)
+    assert err_out == 'hi'

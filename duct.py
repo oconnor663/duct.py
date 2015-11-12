@@ -382,15 +382,14 @@ class IOContext:
         full_env = make_full_env(self.full_env, ioargs.env, ioargs.full_env)
         stdin_cm = child_input_pipe(
             self.stdin_pipe, ioargs.input, ioargs.stdin)
-        stdout_cm = child_output_pipe(
-            self.stdout_pipe, self.stderr_pipe, self.stdout_pipe,
-            ioargs.stdout)
-        stderr_cm = child_output_pipe(
-            self.stdout_pipe, self.stderr_pipe, self.stderr_pipe,
-            ioargs.stderr)
+        stdout_cm = child_output_pipe(self.stdout_pipe, ioargs.stdout)
+        stderr_cm = child_output_pipe(self.stderr_pipe, ioargs.stderr)
         with stdin_cm as stdin_pipe:
-            with stdout_cm as (stdout_pipe, stdout_reader):
-                with stderr_cm as (stderr_pipe, stderr_reader):
+            with stdout_cm as (pre_swap_stdout_pipe, stdout_reader):
+                with stderr_cm as (pre_swap_stderr_pipe, stderr_reader):
+                    stdout_pipe, stderr_pipe = apply_swaps(
+                        ioargs.stdout, ioargs.stderr,
+                        pre_swap_stdout_pipe, pre_swap_stderr_pipe)
                     yield IOContext(stdin_pipe, stdout_pipe, stdout_reader,
                                     stderr_pipe, stderr_reader, cwd, full_env)
 
@@ -422,13 +421,13 @@ def child_input_pipe(parent_pipe, input_arg, stdin_arg):
 
 # Yields both a write pipe and an optional output reader thread.
 @contextmanager
-def child_output_pipe(parent_stdout, parent_stderr, default_pipe, output_arg):
-    if output_arg is None:
+def child_output_pipe(default_pipe, output_arg):
+    # Swap flags (STDOUT, STDERR) have to be handled in a later step, because
+    # e.g. the new stderr pipe won't be ready yet when we're preparing stdout.
+    if output_arg is None or is_swap(output_arg):
         yield default_pipe, None
     elif is_pipe_already(output_arg):
         yield output_arg, None
-    elif is_swap(output_arg):
-        yield get_swapped_pipe(parent_stdout, parent_stderr, output_arg), None
     elif is_devnull(output_arg):
         with open_devnull('w') as write:
             yield write, None
@@ -442,6 +441,17 @@ def child_output_pipe(parent_stdout, parent_stderr, default_pipe, output_arg):
         raise TypeError("Not a valid output parameter: " + repr(output_arg))
 
 
+def is_swap(output_arg):
+    return output_arg in (STDOUT, STDERR)
+
+
+def apply_swaps(stdout_arg, stderr_arg, stdout_pipe, stderr_pipe):
+    # Note that stdout=STDOUT and stderr=STDERR are no-ops.
+    new_stdout = stderr_pipe if stdout_arg == STDERR else stdout_pipe
+    new_stderr = stdout_pipe if stderr_arg == STDOUT else stderr_pipe
+    return new_stdout, new_stderr
+
+
 def is_pipe_already(iovalue):
     # For files and file descriptors, we'll pass them directly to the
     # subprocess module.
@@ -453,17 +463,6 @@ def is_pipe_already(iovalue):
     except (AttributeError, io.UnsupportedOperation):
         # If there's no fileno, also accept integer file descriptors.
         return isinstance(iovalue, int) and iovalue >= 0
-
-
-def is_swap(output_arg):
-    return output_arg == STDOUT or output_arg == STDERR
-
-
-def get_swapped_pipe(parent_stdout, parent_stderr, output_arg):
-    if output_arg == STDOUT:
-        return parent_stdout
-    if output_arg == STDERR:
-        return parent_stderr
 
 
 def is_devnull(iovalue):
