@@ -172,25 +172,26 @@ A string or bytes object to write directly to standard input.
 
 <strong><tt>stdin</tt></strong>
 
-A file or pipe to use in place of the default standard input.
-Incompatible with `input`. It can be a string/bytes/pathlib filepath to
-open, an already open file or descriptor, or `DEVNULL`.
+A file to use in place of the default standard input. It can be a
+string/bytes/pathlib filepath to open, an already open file or
+descriptor, or `DEVNULL`. Setting this and `input` at the same time is
+an error.
 
 <strong><tt>stdout</tt></strong>
 
-Similar to `stdin`, a filepath or a file to use in place of the default
-standard output. Supports `DEVNULL`. Also supports `STDERR`. Note that
-if you're setting `stderr` in the same expression, `STDERR` refers to
-the old value, not the new value you're setting. Also supports `STRING`
-and `BYTES`, which cause output to be captured and stored as the
-`stdout` field of the `Result` object returned by `run`. `STRING` and
-`BYTES` are only meaningful at the run level.
+Similar to `stdin`, a file to use in place of the default standard
+output. It can be a string/bytes/pathlib filepath to open, an already
+open file or descriptor, or `DEVNULL`. Also accepts `STDERR` to join
+with the stderr pipe. (Setting `stdout=STDOUT` is a no-op. Setting
+`stdout=STDERR` and `stderr=STDOUT` at the same time swaps them.) Also
+accepts `STRING` and `BYTES`, which cause output to be captured and
+stored as the `stdout` field of the `Result` object returned by `run`.
+`STRING` and `BYTES` only work at the run level.
 
 <strong><tt>stderr</tt></strong>
 
-Similar to stdout. Also supports `STDOUT`, which behaves like `STDERR`.
-Output captured with `STRING` or `BYTES` is stored as the `stderr` field
-of the `Result` object returned by `run`.
+Similar to `stdout`. Output captured with `STRING` or `BYTES` is stored
+as the `stderr` field of the `Result` object returned by `run`.
 
 <strong><tt>cwd</tt></strong>
 
