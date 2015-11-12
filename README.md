@@ -122,10 +122,10 @@ because shell escaping is tricky.
 <strong><tt>run</tt></strong>(<em>\*\*kwargs</em>)
 
 Execute the expression and return a `Result` object, which has fields
-`stdout`, `stderr`, and `returncode`. If output isn't captured, `stdout`
-and `stderr` will be `None`. If the expression has a non-zero
-returncode, `run` will raise an exception. Use `check=False` to allow
-non-zero returncodes.
+`stdout`, `stderr`, and `returncode`. By default, the child process
+shares the stdin/stdout/stderr pipes of the parent, and no output is
+captured. If the expression has a non-zero returncode, `run` will raise
+an exception. Use `check=False` to allow non-zero returncodes.
 
 <strong><tt>read</tt></strong>(<em>\*\*kwargs</em>)
 
