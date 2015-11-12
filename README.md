@@ -203,8 +203,8 @@ directory of the parent.
 A map of environment variables set for the child process. Note that this
 is *in addition* to what's in `os.environ`, unlike the "env" parameter
 from the `subprocess` module. Using `env` at both the run level and the
-expression level is cumulative. If you set the same variable twice
-though, the expression level wins.
+expression level is cumulative. If you set the same variable in both
+places, the expression level wins.
 
 <strong><tt>full_env</tt></strong>
 
@@ -222,7 +222,7 @@ exception.
 
 <strong><tt>trim</tt></strong>
 
-Defaults to `False`. If `True`, trailing newlines will be stripped from
-output captured with `STRING`. This is the same behavior as backticks or
-`$()` in bash. Output captured as `BYTES` is never trimmed. Only valid
-at the run level.
+Defaults to `False` in `run` and `True` in `read`. If `True`, trailing
+newlines get stripped from any output captured with `STRING`. This is
+the same behavior as backticks or `$()` in bash. Output captured with
+`BYTES` is never trimmed. Only valid at the run level.
