@@ -179,14 +179,14 @@ an error.
 
 <strong><tt>stdout</tt></strong>
 
-Similar to `stdin`, a file to use in place of the default standard
-output. It can be a string/bytes/pathlib filepath to open, an already
-open file or descriptor, or `DEVNULL`. Also accepts `STDERR` to join
-with the stderr pipe. (Setting `stdout=STDOUT` is a no-op. Setting
-`stdout=STDERR` and `stderr=STDOUT` at the same time swaps them.) Also
-accepts `STRING` and `BYTES`, which cause output to be captured and
-stored as the `stdout` field of the `Result` object returned by `run`.
-`STRING` and `BYTES` only work at the run level.
+A file to use in place of the default standard output. It can be a
+string/bytes/pathlib filepath to open, an already open file or
+descriptor, or `DEVNULL`. Also accepts `STDERR` to join with the stderr
+pipe. (Setting `stdout=STDOUT` is a no-op. Setting `stdout=STDERR` and
+`stderr=STDOUT` at the same time swaps them.) Also accepts `STRING` and
+`BYTES`, which cause output to be captured and stored as the `stdout`
+field of the `Result` object returned by `run`. `STRING` and `BYTES`
+only work at the run level.
 
 <strong><tt>stderr</tt></strong>
 
