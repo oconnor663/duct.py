@@ -121,17 +121,18 @@ class Command(Expression):
         which determines the types allowed here (strings and bytes). In
         addition, we also explicitly support pathlib Paths, by converting them
         to strings.'''
-        self._tuple = (prog,) + args
+        prog_str = stringify_with_dot_if_path(prog)
+        args_strs = tuple(stringify_if_path(arg) for arg in args)
+        self._tuple = (prog_str,) + args_strs
         self._check = check
         self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
-        command = stringify_paths_in_list(self._tuple)
         with parent_iocontext.child_context(self._ioargs) as iocontext:
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
             proc = safe_popen(
-                command, cwd=cwd, env=full_env, stdin=iocontext.stdin_pipe,
+                self._tuple, cwd=cwd, env=full_env, stdin=iocontext.stdin_pipe,
                 stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe)
         returncode = proc.wait()
         return returncode if self._check else 0
@@ -145,17 +146,16 @@ class ShellCommand(Expression):
     def __init__(self, shell_cmd, check, ioargs):
         # The command could be a Path. This is potentially useful on Windows
         # where you have to run things like .py files in shell mode.
-        self._shell_cmd = shell_cmd
+        self._shell_cmd = stringify_with_dot_if_path(shell_cmd)
         self._check = check
         self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
-        shell_str = stringify_if_path(self._shell_cmd)
         with parent_iocontext.child_context(self._ioargs) as iocontext:
             cwd = stringify_if_path(iocontext.cwd)
             full_env = stringify_paths_in_dict(iocontext.full_env)
             proc = safe_popen(
-                shell_str, shell=True, cwd=cwd, env=full_env,
+                self._shell_cmd, shell=True, cwd=cwd, env=full_env,
                 stdin=iocontext.stdin_pipe, stdout=iocontext.stdout_pipe,
                 stderr=iocontext.stderr_pipe)
         returncode = proc.wait()
@@ -563,13 +563,21 @@ def stringify_if_path(x):
     return x
 
 
-def stringify_paths_in_list(l):
-    return [stringify_if_path(x) for x in l]
-
-
 def stringify_paths_in_dict(d):
     return dict((stringify_if_path(key), stringify_if_path(val))
                 for key, val in d.items())
+
+
+def stringify_with_dot_if_path(x):
+    '''Pathlib never renders a leading './' in front of a local path. That's an
+    issue because on POSIX subprocess.py (like bash) won't execute scripts in
+    the current directory without it. In the same vein, we also don't want
+    Path('echo') to match '/usr/bin/echo' from the $PATH. To work around both
+    issues, we explicitly join a leading dot to any relative pathlib path.'''
+    if isinstance(x, PurePath):
+        # Note that join does nothing if the path is absolute.
+        return os.path.join('.', str(x))
+    return x
 
 
 def expression_repr(name, args, ioargs, **kwargs):

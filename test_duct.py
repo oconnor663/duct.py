@@ -1,10 +1,11 @@
 #! /usr/bin/env nosetests
 
+import binascii
 import os
 import tempfile
 import textwrap
 
-from pytest import raises
+from pytest import raises, mark
 
 import duct
 from duct import cmd, sh, DEVNULL, STDOUT, STDERR, STRING, BYTES
@@ -257,20 +258,20 @@ def test_stdout():
     assert 'hi\n' == result.stderr
 
 
+@mark.skipif(not has_pathlib, reason='pathlib not installed')
 def test_commands_can_be_paths():
-    if has_pathlib:
-        tempdir = tempfile.mkdtemp()
-        path = Path(tempdir, "script.bat")
-        # Note that Path.open() rejects Python 2 non-unicode strings.
-        with open(str(path), 'w') as f:
-            if os.name == 'nt':
-                f.write('@echo off\n')
-            else:
-                f.write('#! /bin/sh\n')
-            f.write('echo some stuff\n')
-        path.chmod(0o755)
-        assert 'some stuff' == cmd(path).read()
-        assert 'some stuff\n' == sh(path).read(trim=False)
+    tempdir = tempfile.mkdtemp()
+    path = Path(tempdir, "script.bat")
+    # Note that Path.open() rejects Python 2 non-unicode strings.
+    with open(str(path), 'w') as f:
+        if os.name == 'nt':
+            f.write('@echo off\n')
+        else:
+            f.write('#! /bin/sh\n')
+        f.write('echo some stuff\n')
+    path.chmod(0o755)
+    assert 'some stuff' == cmd(path).read()
+    assert 'some stuff\n' == sh(path).read(trim=False)
 
 
 def test_subshell():
@@ -386,3 +387,44 @@ def test_swap_and_redirect_at_same_time():
     joining what stdout used to be.'''
     err_out = sh('echo hi>&2').read(stderr=STDOUT)
     assert err_out == 'hi'
+
+
+@mark.skipif(not has_pathlib, reason='pathlib not installed')
+def test_run_local_path():
+    '''Trying to execute 'test.sh' without the leading dot fails in bash and
+    subprocess.py. But it needs to succeed with Path('test.sh'), because
+    there's no difference between that and Path('./test.sh').'''
+    if os.name == 'nt':
+        extension = '.bat'
+        code = textwrap.dedent('''\
+            @echo off
+            echo foo
+            ''')
+    else:
+        extension = '.sh'
+        code = textwrap.dedent('''\
+            #! /bin/sh
+            echo foo
+            ''')
+    # Use a random name just in case.
+    random_letters = binascii.hexlify(os.urandom(4)).decode()
+    local_script = 'test_' + random_letters + extension
+    script_path = Path(local_script)
+    try:
+        with script_path.open('w') as f:
+            f.write(code)
+        script_path.chmod(0o755)
+        assert 'foo' == cmd(script_path).read()
+        assert 'foo' == sh(script_path).read()
+    finally:
+        script_path.unlink()
+
+
+@mark.skipif(not has_pathlib, reason='pathlib not installed')
+def test_local_path_doesnt_match_PATH():
+    echo_path = Path('echo')
+    assert not echo_path.exists(), 'This path is supposed to be nonexistent.'
+    with raises(FileNotFoundError):
+        cmd(echo_path).run()
+    with raises(duct.CheckedError):
+        sh(echo_path).run()
