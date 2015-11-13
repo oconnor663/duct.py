@@ -396,13 +396,13 @@ def test_run_local_path():
     there's no difference between that and Path('./test.sh').'''
     if os.name == 'nt':
         extension = '.bat'
-        code = textwrap.dedent('''\
+        code = textwrap.dedent(u'''\
             @echo off
             echo foo
             ''')
     else:
         extension = '.sh'
-        code = textwrap.dedent('''\
+        code = textwrap.dedent(u'''\
             #! /bin/sh
             echo foo
             ''')
@@ -420,11 +420,18 @@ def test_run_local_path():
         script_path.unlink()
 
 
+try:
+    # not defined in Python 2 (or pypy3)
+    PROGRAM_NOT_FOUND_ERROR = FileNotFoundError
+except NameError:
+    PROGRAM_NOT_FOUND_ERROR = OSError
+
+
 @mark.skipif(not has_pathlib, reason='pathlib not installed')
 def test_local_path_doesnt_match_PATH():
     echo_path = Path('echo')
     assert not echo_path.exists(), 'This path is supposed to be nonexistent.'
-    with raises(FileNotFoundError):
+    with raises(PROGRAM_NOT_FOUND_ERROR):
         cmd(echo_path).run()
     with raises(duct.CheckedError):
         sh(echo_path).run()
