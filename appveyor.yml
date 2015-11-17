@@ -74,7 +74,4 @@ build_script:
   - "echo NO-OP"
 
 test_script:
-  # Run tests with a 5 second timeout each. I'm putting this in now because we
-  # have pipe hangs on some versions of Windows, and there's no sense in
-  # letting the test run block for an hour.
-  - "%CMD_IN_ENV% py.test --timeout=5"
+  - "%CMD_IN_ENV% py.test"
