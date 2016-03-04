@@ -130,8 +130,8 @@ an exception. Use `check=False` to allow non-zero returncodes.
 <strong><tt>read</tt></strong>(<em>\*\*kwargs</em>)
 
 Execute the expression and capture its output, similar to backticks or
-`$()` in bash. This is a wrapper around `run`, which sets
-`stdout=STRING` and `trim=True` and returns the `stdout` field of the
+`$()` in bash. This is a wrapper around `run`, which sets `stdout=PIPE`,
+`decode=True`, and `sh_trim=True` and returns the `stdout` field of the
 result.
 
 <strong><tt>pipe</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
@@ -183,15 +183,14 @@ A file to use in place of the default standard output. It can be a
 string/bytes/pathlib filepath to open, an already open file or
 descriptor, or `DEVNULL`. Also accepts `STDERR` to join with the stderr
 pipe. (Setting `stdout=STDOUT` is a no-op. Setting `stdout=STDERR` and
-`stderr=STDOUT` at the same time swaps them.) Also accepts `STRING` and
-`BYTES`, which cause output to be captured and stored as the `stdout`
-field of the `Result` object returned by `run`. `STRING` and `BYTES`
-only work at the run level.
+`stderr=STDOUT` at the same time swaps them.) Also accepts `PIPE`, which
+causes output to be captured and stored as the `stdout` field of the
+`Result` object returned by `run`. `PIPE` only work at the run level.
 
 <strong><tt>stderr</tt></strong>
 
-Similar to `stdout`. Output captured with `STRING` or `BYTES` is stored
-as the `stderr` field of the `Result` object returned by `run`.
+Similar to `stdout`. Output captured with `PIPE` is stored as the
+`stderr` field of the `Result` object returned by `run`.
 
 <strong><tt>cwd</tt></strong>
 
@@ -220,9 +219,10 @@ always returns exit status `0`. If `False` at the run level, `run` will
 return results with a nonzero `returncode`, instead of raising an
 exception.
 
-<strong><tt>trim</tt></strong>
+<strong><tt>sh_trim</tt></strong>
 
 Defaults to `False` in `run` and `True` in `read`. If `True`, trailing
-newlines get stripped from any output captured with `STRING`. This is
-the same behavior as backticks or `$()` in bash. Output captured with
-`BYTES` is never trimmed. Only valid at the run level.
+newlines get stripped from any output captured with `PIPE` and
+`decode=True`. This is the same behavior as backticks or `$()` in bash.
+Output captured without `decode` is never trimmed. Only valid at the run
+level.
