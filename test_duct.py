@@ -8,7 +8,7 @@ import textwrap
 from pytest import raises, mark
 
 import duct
-from duct import cmd, sh, DEVNULL, STDOUT, STDERR, STRING, BYTES
+from duct import cmd, sh, DEVNULL, STDOUT, STDERR, PIPE
 
 try:
     from pathlib import Path
@@ -98,12 +98,12 @@ def test_hello_world():
 
 
 def test_result():
-    result = sh('echo more stuff').run(stdout=STRING)
-    assert "more stuff\n" == result.stdout
+    result = sh('echo more stuff').run(stdout=PIPE)
+    assert b"more stuff\n" == result.stdout
 
 
 def test_bytes():
-    out = head(10).read(input="\x00"*100, stdout=BYTES)
+    out = head(10).read(input="\x00"*100, decode=False)
     assert b'\x00'*10 == out
 
 
@@ -244,16 +244,18 @@ def test_stdout():
     out = sh('echo hi', stdout=DEVNULL).read()
     assert '' == out
     # to STDERR
-    result = sh('echo hi', stdout=STDERR).run(stdout=STRING, stderr=STRING)
+    result = sh('echo hi', stdout=STDERR).run(stdout=PIPE, stderr=PIPE,
+                                              decode=True)
     assert '' == result.stdout
     assert 'hi\n' == result.stderr
     # from stderr with STDOUT (note Windows would output any space before >)
-    result = sh('echo hi>&2', stderr=STDOUT).run(stdout=STRING, stderr=BYTES)
+    result = sh('echo hi>&2', stderr=STDOUT).run(stdout=PIPE, stderr=PIPE,
+                                                 decode=True)
     assert 'hi\n' == result.stdout
-    assert b'' == result.stderr
+    assert '' == result.stderr
     # full swap
     result = (sh('echo hi&& echo lo>&2', stdout=STDERR, stderr=STDOUT)
-              .run(stdout=STRING, stderr=STRING))
+              .run(stdout=PIPE, stderr=PIPE, decode=True))
     assert 'lo\n' == result.stdout
     assert 'hi\n' == result.stderr
 
@@ -271,7 +273,7 @@ def test_commands_can_be_paths():
         f.write('echo some stuff\n')
     path.chmod(0o755)
     assert 'some stuff' == cmd(path).read()
-    assert 'some stuff\n' == sh(path).read(trim=False)
+    assert 'some stuff\n' == sh(path).read(sh_trim=False)
 
 
 def test_subshell():
@@ -312,7 +314,7 @@ def test_ThreadWithReturn_reraises_exceptions():
 
 def test_getting_reader_output_before_join_throws():
     default_context = duct.IOContext()
-    _, ioargs = duct.parse_cmd_kwargs(stdout=STRING, stderr=STRING)
+    _, ioargs = duct.parse_cmd_kwargs(stdout=PIPE, stderr=PIPE)
     with default_context.child_context(ioargs) as iocontext:
         with raises(RuntimeError):
             iocontext.stdout_result()
@@ -320,8 +322,8 @@ def test_getting_reader_output_before_join_throws():
             iocontext.stderr_result()
     # Exiting the with-block joins the reader threads, so the output accessors
     # should no longer throw.
-    assert '' == iocontext.stdout_result()
-    assert '' == iocontext.stderr_result()
+    assert b'' == iocontext.stdout_result()
+    assert b'' == iocontext.stderr_result()
 
 
 def test_invalid_io_args():
@@ -352,7 +354,7 @@ def test_string_mode_returns_unicode():
 
 
 def test_bytes_dont_trim():
-    out = sh("echo hi").read(stdout=BYTES)
+    out = sh("echo hi").read(stdout=PIPE, decode=False)
     if os.name == 'nt':
         expected = b"hi\r\n"
     else:
@@ -375,7 +377,7 @@ def test_repr_round_trip():
         "cmd('foo').pipe(sh('bar'))",
         "cmd('foo').then('bar')",
         "cmd('foo').then(sh('bar'))",
-        "cmd('foo', input=DEVNULL, stderr=STDOUT, stdout=BYTES)",
+        "cmd('foo', input=DEVNULL, stderr=STDOUT, stdout=PIPE)",
     ]
     for expression in expressions:
         assert repr(eval(expression)) == expression
@@ -383,7 +385,7 @@ def test_repr_round_trip():
 
 def test_swap_and_redirect_at_same_time():
     '''We need to make sure that setting e.g. stderr=STDOUT while also setting
-    stdout=STRING means that stderr joins the redirected stdout, rather than
+    stdout=PIPE means that stderr joins the redirected stdout, rather than
     joining what stdout used to be.'''
     err_out = sh('echo hi>&2').read(stderr=STDOUT)
     assert err_out == 'hi'

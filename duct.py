@@ -17,12 +17,11 @@ except ImportError:
 # ==========
 
 # same as in the subprocess module
+PIPE = -1
 STDOUT = -2
 DEVNULL = -3
-# not defined in subprocess (values may change)
+# not defined in subprocess (value may change)
 STDERR = -4
-STRING = -5
-BYTES = -6
 
 
 def cmd(prog, *args, **cmd_kwargs):
@@ -38,18 +37,19 @@ def sh(shell_str, **cmd_kwargs):
 class Expression:
     'Abstract base class for all expression types.'
 
-    def run(self, trim=False, **cmd_kwargs):
+    def run(self, decode=False, sh_trim=False, **cmd_kwargs):
         '''Execute the expression and return a Result. Raise an exception if
         the returncode is non-zero, unless `check` is False.'''
         check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
-        return run_expression(self, check, trim, ioargs)
+        return run_expression(self, check, decode, sh_trim, ioargs)
 
-    def read(self, stdout=STRING, trim=True, **run_kwargs):
+    def read(self, stdout=PIPE, decode=True, sh_trim=True, **run_kwargs):
         '''Execute the expression and capture its output, similar to backticks
         or $() in the shell. This is a wrapper around run(), which sets
-        stdout=STRING and trim=True, and then returns result.stdout instead of
-        the whole result.'''
-        result = self.run(stdout=stdout, trim=trim, **run_kwargs)
+        stdout=PIPE, decode=True, and sh_trim=True, and then returns
+        result.stdout instead of the whole result.'''
+        result = self.run(stdout=stdout, decode=decode, sh_trim=sh_trim,
+                          **run_kwargs)
         return result.stdout
 
     def pipe(self, *cmd, **cmd_kwargs):
@@ -87,20 +87,32 @@ class CheckedError(subprocess.CalledProcessError):
 
 # Set up any readers or writers, kick off the recurisve _exec(), and collect
 # the results. This is the core of the execution methods, run() and read().
-def run_expression(expr, check, trim, ioargs):
+def run_expression(expr, check, decode, sh_trim, ioargs):
     default_iocontext = IOContext()
     with default_iocontext.child_context(ioargs) as iocontext:
         # Kick off the child processes.
         returncode = expr._exec(iocontext)
-    stdout_result = iocontext.stdout_result()
-    stderr_result = iocontext.stderr_result()
-    if trim:
-        stdout_result = trim_if_string(stdout_result)
-        stderr_result = trim_if_string(stderr_result)
+    stdout_result = process_output_result(
+        iocontext.stdout_result(), decode, sh_trim)
+    stderr_result = process_output_result(
+        iocontext.stderr_result(), decode, sh_trim)
     result = Result(returncode, stdout_result, stderr_result)
     if check and returncode != 0:
         raise CheckedError(result, expr)
     return result
+
+
+def process_output_result(result, decode, sh_trim):
+    '''This function takes care of decoding Unicode bytes, universalizing
+    newlines, and trimming tailing newlines, as appropriate.'''
+    if result is None:
+        return None
+    if not decode:
+        return result
+    decoded_result = decode_with_universal_newlines(result)
+    if sh_trim:
+        decoded_result = decoded_result.rstrip('\n')
+    return decoded_result
 
 
 # Methods like pipe() take a command argument. This can either be arguments to
@@ -225,7 +237,7 @@ class Pipe(Expression):
         # its end of the pipe. Closing the write end allows the right side to
         # receive EOF, and closing the read end allows the left side to receive
         # SIGPIPE.
-        read_pipe, write_pipe = open_pipe(binary=True)
+        read_pipe, write_pipe = open_pipe()
 
         def do_left():
             _, left_ioargs = parse_cmd_kwargs(stdout=write_pipe)
@@ -262,7 +274,8 @@ def trim_if_string(x):
     '''Trim trailing newlines, as the shell does by default when it's capturing
     output. Only do this for strings, because it's likely to be a mistake when
     used with bytes. For example:
-        # Does the user want this trimmed, or did they just forget trim=False?
+        # Does the user want this trimmed, or did they just forget
+        # sh_trim=False?
         cmd('head -c 10 /dev/urandom').read(stdout=bytes)
     '''
     # Check for str in Python 3, unicode in Python 2.
@@ -272,10 +285,9 @@ def trim_if_string(x):
         return x
 
 
-def open_pipe(binary=False):
+def open_pipe():
     read_fd, write_fd = os.pipe()
-    # The 'rU' mode is the Python-2-compatible way to get universal newlines.
-    read_mode, write_mode = ('rb', 'wb') if binary else ('rU', 'w')
+    read_mode, write_mode = ('rb', 'wb')
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
 
 
@@ -315,8 +327,8 @@ def parse_cmd_kwargs(input=None, stdin=None, stdout=None, stderr=None,
     checking on IO arguments. Other constructors can pass their keyword args
     here as part of __init__, rather than holding them until _exec, so that
     invalid keywords cause errors in the right place. This also lets us do some
-    consistency checks early, like prohibiting both input and stdin at the same
-    time.
+    consistency checks early, like prohibiting using input and stdin at the
+    same time.
 
     If we only needed to support Python 3, we might handle the "check" keyword
     arg separately from this function. It's not intended to be inherited by
@@ -435,7 +447,7 @@ def child_output_pipe(default_pipe, output_arg):
         with open_path(output_arg, 'w') as write:
             yield write, None
     elif wants_output_reader(output_arg):
-        with spawn_output_reader(output_arg) as (write, thread):
+        with spawn_output_reader() as (write, thread):
             yield write, thread
     else:
         raise TypeError("Not a valid output parameter: " + repr(output_arg))
@@ -499,15 +511,21 @@ except NameError:
 
 @contextmanager
 def spawn_input_writer(input_arg):
-    read, write = open_pipe(binary=isinstance(input_arg, bytes))
+    read, write = open_pipe()
 
     def write_thread():
+        # If the argument is a string, convert it to bytes first.
+        if isinstance(input_arg, str):
+            input_bytes = encode_with_universal_newlines(input_arg)
+        else:
+            input_bytes = input_arg
+
         with write:
             # If the write blocks on a full pipe buffer (default 64 KB on
             # Linux), and then the program on the other end quits before
             # reading everything, the write will throw. Catch this error.
             try:
-                write.write(input_arg)
+                write.write(input_bytes)
             except PIPE_CLOSED_ERROR:
                 pass
     thread = ThreadWithReturn(write_thread)
@@ -518,21 +536,17 @@ def spawn_input_writer(input_arg):
 
 
 def wants_output_reader(output_arg):
-    return output_arg in (STRING, BYTES)
+    return output_arg == PIPE
 
 
 @contextmanager
-def spawn_output_reader(output_arg):
-    binary_mode = (output_arg == BYTES)
-    read, write = open_pipe(binary_mode)
+def spawn_output_reader():
+    read, write = open_pipe()
 
     def read_thread():
         with read:
-            out = read.read()
-            # In Python 2, we have to explicitly decode to unicode.
-            if not binary_mode and not isinstance(out, type(u'')):
-                out = out.decode('utf8')
-            return out
+            return read.read()
+
     thread = ThreadWithReturn(read_thread)
     thread.start()
     with write:
@@ -583,11 +597,10 @@ def stringify_with_dot_if_path(x):
 def expression_repr(name, args, ioargs, **kwargs):
     '''Handle all the shared logic for printing expression arguments.'''
     constants = {
+        PIPE: "PIPE",
         STDOUT: "STDOUT",
         DEVNULL: "DEVNULL",
         STDERR: "STDERR",
-        STRING: "STRING",
-        BYTES: "BYTES",
     }
     parts = [repr(i) for i in args]
     kwargs.update(ioargs._asdict())
@@ -628,3 +641,15 @@ def safe_popen(*args, **kwargs):
     close_fds = (os.name != 'nt')
     with popen_lock:
         return subprocess.Popen(*args, close_fds=close_fds, **kwargs)
+
+
+def decode_with_universal_newlines(b):
+    '''We could let our pipes do this for us, by opening them in universal
+    newlines mode, but it's a bit cleaner to do it ourselves. That saves us
+    from passing around the mode all over the place, and from having decoding
+    exceptions thrown on reader threads.'''
+    return b.decode().replace('\r\n', '\n').replace('\r', '\n')
+
+
+def encode_with_universal_newlines(s):
+    return s.replace('\n', os.linesep).encode()
