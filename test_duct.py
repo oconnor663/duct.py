@@ -98,8 +98,8 @@ def test_hello_world():
 
 
 def test_result():
-    result = sh('echo more stuff').run(stdout=PIPE)
-    assert b"more stuff\n" == result.stdout
+    result = sh('echo more stuff').run(stdout=PIPE, decode=True)
+    assert "more stuff\n" == result.stdout
 
 
 def test_bytes():
