@@ -25,13 +25,13 @@ STDERR = -4
 
 
 def cmd(prog, *args, **cmd_kwargs):
-    check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
-    return Command(prog, args, check, ioargs)
+    ioargs = parse_cmd_kwargs(**cmd_kwargs)
+    return Command(prog, args, ioargs)
 
 
 def sh(shell_str, **cmd_kwargs):
-    check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
-    return ShellCommand(shell_str, check, ioargs)
+    ioargs = parse_cmd_kwargs(**cmd_kwargs)
+    return ShellCommand(shell_str, ioargs)
 
 
 class Expression:
@@ -40,8 +40,8 @@ class Expression:
     def run(self, decode=False, sh_trim=False, **cmd_kwargs):
         '''Execute the expression and return a Result. Raise an exception if
         the returncode is non-zero, unless `check` is False.'''
-        check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
-        return run_expression(self, check, decode, sh_trim, ioargs)
+        ioargs = parse_cmd_kwargs(**cmd_kwargs)
+        return run_expression(self, decode, sh_trim, ioargs)
 
     def read(self, stdout=PIPE, decode=True, sh_trim=True, **run_kwargs):
         '''Execute the expression and capture its output, similar to backticks
@@ -65,8 +65,8 @@ class Expression:
 
             some_expression.subshell(stderr=STDOUT).pipe(another_expression)
         '''
-        check, ioargs = parse_cmd_kwargs(**cmd_kwargs)
-        return Subshell(self, check, ioargs)
+        ioargs = parse_cmd_kwargs(**cmd_kwargs)
+        return Subshell(self, ioargs)
 
 
 Result = namedtuple('Result', ['returncode', 'stdout', 'stderr'])
@@ -87,7 +87,7 @@ class CheckedError(subprocess.CalledProcessError):
 
 # Set up any readers or writers, kick off the recurisve _exec(), and collect
 # the results. This is the core of the execution methods, run() and read().
-def run_expression(expr, check, decode, sh_trim, ioargs):
+def run_expression(expr, decode, sh_trim, ioargs):
     default_iocontext = IOContext()
     with default_iocontext.child_context(ioargs) as iocontext:
         # Kick off the child processes.
@@ -97,7 +97,7 @@ def run_expression(expr, check, decode, sh_trim, ioargs):
     stderr_result = process_output_result(
         iocontext.stderr_result(), decode, sh_trim)
     result = Result(returncode, stdout_result, stderr_result)
-    if check and returncode != 0:
+    if ioargs.check and returncode != 0:
         raise CheckedError(result, expr)
     return result
 
@@ -128,7 +128,7 @@ def command_or_parts(first, *rest, **cmd_kwargs):
 
 
 class Command(Expression):
-    def __init__(self, prog, args, check, ioargs):
+    def __init__(self, prog, args, ioargs):
         '''The prog and args will be passed directly to subprocess.call(),
         which determines the types allowed here (strings and bytes). In
         addition, we also explicitly support pathlib Paths, by converting them
@@ -136,7 +136,6 @@ class Command(Expression):
         prog_str = stringify_with_dot_if_path(prog)
         args_strs = tuple(stringify_if_path(arg) for arg in args)
         self._tuple = (prog_str,) + args_strs
-        self._check = check
         self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
@@ -147,19 +146,17 @@ class Command(Expression):
                 self._tuple, cwd=cwd, env=full_env, stdin=iocontext.stdin_pipe,
                 stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe)
         returncode = proc.wait()
-        return returncode if self._check else 0
+        return returncode if self._ioargs.check else 0
 
     def __repr__(self):
-        return expression_repr('cmd', self._tuple, self._ioargs,
-                               check=self._check)
+        return expression_repr('cmd', self._tuple, self._ioargs)
 
 
 class ShellCommand(Expression):
-    def __init__(self, shell_cmd, check, ioargs):
+    def __init__(self, shell_cmd, ioargs):
         # The command could be a Path. This is potentially useful on Windows
         # where you have to run things like .py files in shell mode.
         self._shell_cmd = stringify_with_dot_if_path(shell_cmd)
-        self._check = check
         self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
@@ -171,27 +168,25 @@ class ShellCommand(Expression):
                 stdin=iocontext.stdin_pipe, stdout=iocontext.stdout_pipe,
                 stderr=iocontext.stderr_pipe)
         returncode = proc.wait()
-        return returncode if self._check else 0
+        return returncode if self._ioargs.check else 0
 
     def __repr__(self):
-        return expression_repr('sh', [self._shell_cmd], self._ioargs,
-                               check=self._check)
+        return expression_repr('sh', [self._shell_cmd], self._ioargs)
 
 
 class Subshell(Expression):
-    def __init__(self, expr, check, ioargs):
+    def __init__(self, expr, ioargs):
         self._expr = expr
-        self._check = check
         self._ioargs = ioargs
 
     def _exec(self, parent_iocontext):
         with parent_iocontext.child_context(self._ioargs) as iocontext:
             returncode = self._expr._exec(iocontext)
-        return returncode if self._check else 0
+        return returncode if self._ioargs.check else 0
 
     def __repr__(self):
         return repr(self._expr) + '.' + expression_repr(
-            'subshell', [], self._ioargs, check=self._check)
+            'subshell', [], self._ioargs)
 
 
 class Then(Expression):
@@ -240,7 +235,7 @@ class Pipe(Expression):
         read_pipe, write_pipe = open_pipe()
 
         def do_left():
-            _, left_ioargs = parse_cmd_kwargs(stdout=write_pipe)
+            left_ioargs = parse_cmd_kwargs(stdout=write_pipe)
             left_iocm = parent_iocontext.child_context(left_ioargs)
             with write_pipe:
                 with left_iocm as iocontext:
@@ -248,7 +243,7 @@ class Pipe(Expression):
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
-        _, right_ioargs = parse_cmd_kwargs(stdin=read_pipe)
+        right_ioargs = parse_cmd_kwargs(stdin=read_pipe)
         right_iocm = parent_iocontext.child_context(right_ioargs)
         with read_pipe:
             with right_iocm as iocontext:
@@ -318,7 +313,7 @@ class ThreadWithReturn(threading.Thread):
 
 
 IOArgs = namedtuple('IOArgs', ['input', 'stdin', 'stdout', 'stderr', 'cwd',
-                               'env', 'full_env'])
+                               'env', 'full_env', 'check'])
 
 
 def parse_cmd_kwargs(input=None, stdin=None, stdout=None, stderr=None,
@@ -343,7 +338,7 @@ def parse_cmd_kwargs(input=None, stdin=None, stdout=None, stderr=None,
         raise ValueError('stdin and input arguments may not both be used.')
     if env is not None and full_env is not None:
         raise ValueError('env and full_env arguments may not both be used.')
-    return check, IOArgs(input, stdin, stdout, stderr, cwd, env, full_env)
+    return IOArgs(input, stdin, stdout, stderr, cwd, env, full_env, check)
 
 
 class IOContext:
