@@ -136,12 +136,9 @@ result.
 
 <strong><tt>pipe</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
 
-Create a pipe expression, similar to `|` in bash. The the right side can
-be a command with the same syntax as `cmd`. It can also by another duct
-expression, in which case no additional arguments are allowed. If you
-want to use `sh` syntax on the right side of a pipe, write
-`foo.pipe(sh("bar"))`. The returncode of a pipe expression is equal to
-the right side's returncode if it's nonzero, otherwise the left side's.
+Create a pipe expression, similar to `|` in bash. The the right is any
+duct expression. The returncode of a pipe expression is equal to the
+right side's returncode if it's nonzero, otherwise the left side's.
 
 <strong><tt>then</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
 

@@ -52,11 +52,11 @@ class Expression:
                           **run_kwargs)
         return result.stdout
 
-    def pipe(self, *cmd, **cmd_kwargs):
-        return Pipe(self, command_or_parts(*cmd, **cmd_kwargs))
+    def pipe(self, right_side):
+        return Pipe(self, right_side)
 
-    def then(self, *cmd, **cmd_kwargs):
-        return Then(self, command_or_parts(*cmd, **cmd_kwargs))
+    def then(self, right_side):
+        return Then(self, right_side)
 
     def subshell(self, **cmd_kwargs):
         '''For applying IO arguments to an entire expression. Normally you do
@@ -113,18 +113,6 @@ def process_output_result(result, decode, sh_trim):
     if sh_trim:
         decoded_result = decoded_result.rstrip('\n')
     return decoded_result
-
-
-# Methods like pipe() take a command argument. This can either be arguments to
-# a Command constructor, or it can be an already-fully-formed command, like
-# another compount expression or the output of sh().
-def command_or_parts(first, *rest, **cmd_kwargs):
-    if isinstance(first, Expression):
-        if rest or cmd_kwargs:
-            raise TypeError("When an expression object is given, "
-                            "no other arguments are allowed.")
-        return first
-    return cmd(first, *rest, **cmd_kwargs)
 
 
 class Command(Expression):
@@ -205,11 +193,7 @@ class Then(Expression):
         return right_status
 
     def __repr__(self):
-        if isinstance(self._right, Command):
-            right_repr = repr(self._right).replace('cmd', 'then')
-        else:
-            right_repr = 'then(' + repr(self._right) + ')'
-        return repr(self._left) + '.' + right_repr
+        return "{}.then({})".format(repr(self._left), repr(self._right))
 
 
 # Pipe uses another thread to run the left side of the pipe in parallel with
@@ -258,11 +242,7 @@ class Pipe(Expression):
             return left_status
 
     def __repr__(self):
-        if isinstance(self._right, Command):
-            right_repr = repr(self._right).replace('cmd', 'pipe')
-        else:
-            right_repr = 'pipe(' + repr(self._right) + ')'
-        return repr(self._left) + '.' + right_repr
+        return "{}.pipe({})".format(repr(self._left), repr(self._right))
 
 
 def trim_if_string(x):

@@ -140,8 +140,9 @@ def test_pipe_SIGPIPE():
 
 
 def test_then():
-    assert 'A' == true().then('python', '-c', 'print("A")').read()
-    assert '' == false().then('python', '-c', 'print("A")').read(check=False)
+    print_a = cmd('python', '-c', 'print("A")')
+    assert 'A' == true().then(print_a).read()
+    assert '' == false().then(print_a).read(check=False)
 
 
 def test_nesting():
@@ -284,12 +285,6 @@ def test_subshell():
     assert "foo" == out
 
 
-def test_kwargs_prohibited_with_expression_value():
-    # This should throw even before the command is run.
-    with raises(TypeError):
-        cmd("foo").pipe(cmd("bar"), check=False)
-
-
 def test_pipe_returns_rightmost_error():
     assert 1 == true().pipe(false()).run(check=False).returncode
     assert 1 == false().pipe(false()).run(check=False).returncode
@@ -373,9 +368,9 @@ def test_repr_round_trip():
         "cmd('foo', check=False, env={'x': 'y'})",
         "sh('bar', check=False, input='stuff')",
         "cmd('foo').subshell(check=False, full_env={})",
-        "cmd('foo').pipe('bar')",
+        "cmd('foo').pipe(cmd('bar'))",
         "cmd('foo').pipe(sh('bar'))",
-        "cmd('foo').then('bar')",
+        "cmd('foo').then(cmd('bar'))",
         "cmd('foo').then(sh('bar'))",
         "cmd('foo', input=DEVNULL, stderr=STDOUT, stdout=PIPE)",
     ]
