@@ -193,7 +193,7 @@ class Then(Expression):
         return right_status
 
     def __repr__(self):
-        return "{}.then({})".format(repr(self._left), repr(self._right))
+        return "{0}.then({1})".format(repr(self._left), repr(self._right))
 
 
 # Pipe uses another thread to run the left side of the pipe in parallel with
@@ -242,7 +242,7 @@ class Pipe(Expression):
             return left_status
 
     def __repr__(self):
-        return "{}.pipe({})".format(repr(self._left), repr(self._right))
+        return "{0}.pipe({1})".format(repr(self._left), repr(self._right))
 
 
 def trim_if_string(x):
