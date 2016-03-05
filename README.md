@@ -216,6 +216,13 @@ always returns exit status `0`. If `False` at the run level, `run` will
 return results with a nonzero `returncode`, instead of raising an
 exception.
 
+<strong><tt>decode</tt></strong>
+
+Defaults to `False` in `run` and `True` in `read`. If `True`, captured
+output bytes get decoded to Unicode strings in the `Result` object, and
+platform specific newlines in those strings get translated into `\n`
+("universal newlines" mode).
+
 <strong><tt>sh_trim</tt></strong>
 
 Defaults to `False` in `run` and `True` in `read`. If `True`, trailing
