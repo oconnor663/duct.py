@@ -39,9 +39,7 @@ Sometimes you have to write ridiculous pipelines in bash:
 ```
 
 The duct version is longer, but duct expressions are composable objects,
-so you don't have to write the whole thing in one go. Note that `then`
-and `pipe` accept the same arguments as `cmd`, but they can also accept
-other duct expressions, like `sh` in this example:
+so we can build the whole command piece-by-piece:
 
 ```python
 from duct import cmd, sh, STDOUT, STDERR
