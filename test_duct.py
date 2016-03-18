@@ -103,7 +103,7 @@ def test_result():
 
 
 def test_bytes():
-    out = head(10).read(input="\x00"*100, decode=False)
+    out = head(10).read(input=b'\x00'*100, decode=False)
     assert b'\x00'*10 == out
 
 
