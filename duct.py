@@ -245,21 +245,6 @@ class Pipe(Expression):
         return "{0}.pipe({1})".format(repr(self._left), repr(self._right))
 
 
-def trim_if_string(x):
-    '''Trim trailing newlines, as the shell does by default when it's capturing
-    output. Only do this for strings, because it's likely to be a mistake when
-    used with bytes. For example:
-        # Does the user want this trimmed, or did they just forget
-        # sh_trim=False?
-        cmd('head -c 10 /dev/urandom').read(stdout=bytes)
-    '''
-    # Check for str in Python 3, unicode in Python 2.
-    if isinstance(x, type(u'')):
-        return x.rstrip('\n')
-    else:
-        return x
-
-
 def open_pipe():
     read_fd, write_fd = os.pipe()
     read_mode, write_mode = ('rb', 'wb')
