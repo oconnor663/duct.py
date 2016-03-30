@@ -445,8 +445,8 @@ def test_swap_at_top_level():
     child = textwrap.dedent('''
         from duct import sh, STDOUT, STDERR
         # Swap stdout and stderr without having ever redirected them, as far as
-        # duct is concerned. (As always, this is cmd.exe-compatible.)
-        sh('echo foo; echo bar>&2').run(stdout=STDERR, stderr=STDOUT)
+        # duct is concerned. (As always, this has to be cmd.exe-compatible.)
+        sh('echo foo&& echo bar>&2').run(stdout=STDERR, stderr=STDOUT)
         ''')
     temp = mktemp()
     with open(temp, 'w') as f:
