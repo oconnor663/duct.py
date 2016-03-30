@@ -312,8 +312,10 @@ class IOContext:
     interprets IO parameters and acts as a context manager for the resources it
     opens.'''
 
-    def __init__(self, stdin_pipe=None, stdout_pipe=None, stdout_reader=None,
-                 stderr_pipe=None, stderr_reader=None, cwd=None,
+    # Hardcode the standard file descriptors. We can't rely on None here,
+    # becase STDOUT/STDERR swapping needs to work.
+    def __init__(self, stdin_pipe=0, stdout_pipe=1, stdout_reader=None,
+                 stderr_pipe=2, stderr_reader=None, cwd=None,
                  full_env=None):
         self.stdin_pipe = stdin_pipe
         self.stdout_pipe = stdout_pipe

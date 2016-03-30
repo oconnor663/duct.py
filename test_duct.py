@@ -2,6 +2,7 @@
 
 import binascii
 import os
+import sys
 import tempfile
 import textwrap
 
@@ -432,3 +433,24 @@ def test_local_path_doesnt_match_PATH():
         cmd(echo_path).run()
     with raises(duct.CheckedError):
         sh(echo_path).run()
+
+
+def test_swap_at_top_level():
+    '''We need to make sure that STDOUT and STDERR work even when pipes are
+    being inherited from the parent process instead of redirected. Previously
+    we redirected "inherit" as None, which broke this case. We can't test this
+    by capturing output in the usual way; we need to wrap to a subprocess that
+    uses duct without capturing.'''
+
+    child = textwrap.dedent('''
+        from duct import sh, STDOUT, STDERR
+        # Swap stdout and stderr without having ever redirected them, as far as
+        # duct is concerned. (As always, this is cmd.exe-compatible.)
+        sh('echo foo; echo bar>&2').run(stdout=STDERR, stderr=STDOUT)
+        ''')
+    temp = mktemp()
+    with open(temp, 'w') as f:
+        f.write(child)
+    result = cmd(sys.executable, temp).run(stdout=PIPE, stderr=PIPE)
+    assert result.stdout == b"bar\n"
+    assert result.stderr == b"foo\n"
