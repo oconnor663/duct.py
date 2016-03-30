@@ -451,6 +451,8 @@ def test_swap_at_top_level():
     temp = mktemp()
     with open(temp, 'w') as f:
         f.write(child)
-    result = cmd(sys.executable, temp).run(stdout=PIPE, stderr=PIPE)
+    # Set the PYTHONPATH so that the child script can find duct.
+    env = {'PYTHONPATH': os.getcwd()}
+    result = cmd(sys.executable, temp).run(env=env, stdout=PIPE, stderr=PIPE)
     assert result.stdout == b"bar\n"
     assert result.stderr == b"foo\n"
