@@ -78,8 +78,8 @@ class CheckedError(subprocess.CalledProcessError):
         self.expression = expression
 
     def __str__(self):
-        return 'Expression {0} returned non-zero exit status {1}.'.format(
-            self.expression, self.result.returncode)
+        return 'Expression {0} returned non-zero exit status: {1}'.format(
+            self.expression, self.result)
 
 
 # Implementation Details
