@@ -442,11 +442,15 @@ def test_swap_at_top_level():
     by capturing output in the usual way; we need to wrap to a subprocess that
     uses duct without capturing.'''
 
+    # Note that Python 2.6 really screws with us here. See
+    # http://stackoverflow.com/q/36311719/823869. If I set stdout=sys.stderr in
+    # a regular subprocess call, that does redirect stdout, but it *closes*
+    # stderr in the child. As a result, we can only test one at a time. Crazy.
+    # Also, as usual, we need to stay compatible with cmd.exe here.
     child = textwrap.dedent('''
         from duct import sh, STDOUT, STDERR
-        # Swap stdout and stderr without having ever redirected them, as far as
-        # duct is concerned. (As always, this has to be cmd.exe-compatible.)
-        sh('echo foo&& echo bar>&2').run(stdout=STDERR, stderr=STDOUT)
+        sh('echo foo').run(stdout=STDERR)
+        sh('echo bar>&2').run(stderr=STDOUT)
         ''')
     temp = mktemp()
     with open(temp, 'w') as f:
@@ -455,5 +459,6 @@ def test_swap_at_top_level():
     env = {'PYTHONPATH': os.getcwd()}
     result = cmd(sys.executable, temp).run(
         env=env, decode=True, stdout=PIPE, stderr=PIPE)
+    # Assert that the outputs are swapped.
     assert result.stdout == "bar\n"
     assert result.stderr == "foo\n"
