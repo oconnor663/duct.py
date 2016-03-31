@@ -438,15 +438,16 @@ def test_local_path_doesnt_match_PATH():
 def test_swap_at_top_level():
     '''We need to make sure that STDOUT and STDERR work even when pipes are
     being inherited from the parent process instead of redirected. Previously
-    we redirected "inherit" as None, which broke this case. We can't test this
+    we represented "inherit" as None, which broke this case. We can't test this
     by capturing output in the usual way; we need to wrap to a subprocess that
     uses duct without capturing.'''
 
     # Note that Python 2.6 really screws with us here. See
     # http://stackoverflow.com/q/36311719/823869. If I set stdout=sys.stderr in
     # a regular subprocess call, that does redirect stdout, but it *closes*
-    # stderr in the child. As a result, we can only test one at a time. Crazy.
-    # Also, as usual, we need to stay compatible with cmd.exe here.
+    # stderr in the child. As a result, we can only test the pipes one at a
+    # time. Wacky fun! Also, as usual, we need to stay compatible with cmd.exe
+    # here.
     child = textwrap.dedent('''
         from duct import sh, STDOUT, STDERR
         sh('echo foo').run(stdout=STDERR)
