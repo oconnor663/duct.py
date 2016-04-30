@@ -115,8 +115,8 @@ def process_output_result(result, decode, sh_trim):
     return decoded_result
 
 
-class Command(Expression):
-    def __init__(self, prog, args, ioargs):
+class Cmd(Expression):
+    def __init__(self, prog, args):
         '''The prog and args will be passed directly to subprocess.call(),
         which determines the types allowed here (strings and bytes). In
         addition, we also explicitly support pathlib Paths, by converting them
@@ -124,57 +124,33 @@ class Command(Expression):
         prog_str = stringify_with_dot_if_path(prog)
         args_strs = tuple(stringify_if_path(arg) for arg in args)
         self._tuple = (prog_str,) + args_strs
-        self._ioargs = ioargs
 
-    def _exec(self, parent_iocontext):
-        with parent_iocontext.child_context(self._ioargs) as iocontext:
-            cwd = stringify_if_path(iocontext.cwd)
-            full_env = stringify_paths_in_dict(iocontext.full_env)
-            proc = safe_popen(
-                self._tuple, cwd=cwd, env=full_env, stdin=iocontext.stdin_pipe,
-                stdout=iocontext.stdout_pipe, stderr=iocontext.stderr_pipe)
-        returncode = proc.wait()
-        return returncode if self._ioargs.check else 0
+    def _exec(self, context):
+        proc = safe_popen(
+            self._tuple, cwd=context.cwd, env=context.env,
+            stdin=context.stdin_pipe, stdout=context.stdout_pipe,
+            stderr=context.stderr_pipe)
+        return proc.wait()
 
     def __repr__(self):
         return expression_repr('cmd', self._tuple, self._ioargs)
 
 
-class ShellCommand(Expression):
-    def __init__(self, shell_cmd, ioargs):
+class Sh(Expression):
+    def __init__(self, shell_cmd):
         # The command could be a Path. This is potentially useful on Windows
         # where you have to run things like .py files in shell mode.
         self._shell_cmd = stringify_with_dot_if_path(shell_cmd)
-        self._ioargs = ioargs
 
-    def _exec(self, parent_iocontext):
-        with parent_iocontext.child_context(self._ioargs) as iocontext:
-            cwd = stringify_if_path(iocontext.cwd)
-            full_env = stringify_paths_in_dict(iocontext.full_env)
-            proc = safe_popen(
-                self._shell_cmd, shell=True, cwd=cwd, env=full_env,
-                stdin=iocontext.stdin_pipe, stdout=iocontext.stdout_pipe,
-                stderr=iocontext.stderr_pipe)
-        returncode = proc.wait()
-        return returncode if self._ioargs.check else 0
+    def _exec(self, context):
+        proc = safe_popen(
+            self._shell_cmd, shell=True, cwd=context.cwd, env=context.env,
+            stdin=context.stdin_pipe, stdout=context.stdout_pipe,
+            stderr=context.stderr_pipe)
+        return proc.wait()
 
     def __repr__(self):
         return expression_repr('sh', [self._shell_cmd], self._ioargs)
-
-
-class Subshell(Expression):
-    def __init__(self, expr, ioargs):
-        self._expr = expr
-        self._ioargs = ioargs
-
-    def _exec(self, parent_iocontext):
-        with parent_iocontext.child_context(self._ioargs) as iocontext:
-            returncode = self._expr._exec(iocontext)
-        return returncode if self._ioargs.check else 0
-
-    def __repr__(self):
-        return repr(self._expr) + '.' + expression_repr(
-            'subshell', [], self._ioargs)
 
 
 class Then(Expression):
@@ -182,14 +158,14 @@ class Then(Expression):
         self._left = left
         self._right = right
 
-    def _exec(self, parent_iocontext):
+    def _exec(self, context):
         # Execute the first command.
-        left_status = self._left._exec(parent_iocontext)
+        left_status = self._left._exec(context)
         # If it returns non-zero short-circuit.
         if left_status != 0:
             return left_status
         # Otherwise execute the second command.
-        right_status = self._right._exec(parent_iocontext)
+        right_status = self._right._exec(context)
         return right_status
 
     def __repr__(self):
@@ -208,7 +184,7 @@ class Pipe(Expression):
         self._left = left
         self._right = right
 
-    def _exec(self, parent_iocontext):
+    def _exec(self, context):
         # Open a read/write pipe. The write end gets passed to the left as
         # stdout, and the read end gets passed to the right as stdin. Either
         # side could be a compound expression (like A.then(B)), so we have to
@@ -220,7 +196,8 @@ class Pipe(Expression):
 
         def do_left():
             left_ioargs = parse_cmd_kwargs(stdout=write_pipe)
-            left_iocm = parent_iocontext.child_context(left_ioargs)
+            # Figure out what goes here.
+            # left_iocm = context.child_context(left_ioargs)
             with write_pipe:
                 with left_iocm as iocontext:
                     return self._left._exec(iocontext)
@@ -228,7 +205,7 @@ class Pipe(Expression):
         left_thread.start()
 
         right_ioargs = parse_cmd_kwargs(stdin=read_pipe)
-        right_iocm = parent_iocontext.child_context(right_ioargs)
+        # right_iocm = context.child_context(right_ioargs)
         with read_pipe:
             with right_iocm as iocontext:
                 right_status = self._right._exec(iocontext)
