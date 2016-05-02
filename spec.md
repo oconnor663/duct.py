@@ -36,3 +36,8 @@ important to be able to execute paths in shell mode on Windows, where scripts
 have no unix-style shebang and instead rely on cmd.exe to figure out what their
 interpreter should be. That means sh() also needs to observe the note above
 about paths that start with dot.
+
+## Shell semantics
+
+Implementations should follow Python's lead here. Use `/bin/sh` on POSIX
+systems and whatever's in the `COMSPEC` environment variable on Windows.
