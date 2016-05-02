@@ -39,5 +39,7 @@ about paths that start with dot.
 
 ## Shell semantics
 
-Implementations should follow Python's lead here. Use `/bin/sh` on POSIX
-systems and whatever's in the `COMSPEC` environment variable on Windows.
+Implementations should follow [Python's lead
+here](https://docs.python.org/3/library/subprocess.html#popen-constructor). Use
+`/bin/sh` on POSIX systems and whatever's in the `COMSPEC` environment variable
+on Windows.
