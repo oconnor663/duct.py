@@ -17,40 +17,46 @@ except ImportError:
 # ==========
 
 # same as in the subprocess module
-PIPE = -1
 STDOUT = -2
 DEVNULL = -3
 # not defined in subprocess (value may change)
 STDERR = -4
+CAPTURE = -5
 
 
-def cmd(prog, *args, **cmd_kwargs):
-    ioargs = parse_cmd_kwargs(**cmd_kwargs)
-    return Command(prog, args, ioargs)
+def cmd(prog, *args):
+    return Cmd(prog, args)
 
 
-def sh(shell_str, **cmd_kwargs):
-    ioargs = parse_cmd_kwargs(**cmd_kwargs)
-    return ShellCommand(shell_str, ioargs)
+def sh(shell_str):
+    return Sh(shell_str)
 
 
 class Expression:
     'Abstract base class for all expression types.'
 
-    def run(self, decode=False, sh_trim=False, **cmd_kwargs):
-        '''Execute the expression and return a Result. Raise an exception if
-        the returncode is non-zero, unless `check` is False.'''
-        ioargs = parse_cmd_kwargs(**cmd_kwargs)
-        return run_expression(self, decode, sh_trim, ioargs)
+    def run(self):
+        '''Execute the expression and return a Result, which includes the exit
+        status and any captured output. Raise an exception if the status is
+        non-zero.'''
+        with spawn_output_reader() as (stdout_capture, stdout_thread):
+            with spawn_output_reader() as (stderr_capture, stderr_thread):
+                context = starter_iocontext(stdout_capture, stderr_capture)
+                status = self._exec(context)
+                stdout_bytes = stdout_thread.join()
+                stderr_bytes = stderr_thread.join()
+        result = Result(status, stdout_bytes, stderr_bytes)
+        if status != 0:
+            raise StatusError(result, self)
+        return result
 
-    def read(self, stdout=PIPE, decode=True, sh_trim=True, **run_kwargs):
+    def read(self):
         '''Execute the expression and capture its output, similar to backticks
-        or $() in the shell. This is a wrapper around run(), which sets
-        stdout=PIPE, decode=True, and sh_trim=True, and then returns
-        result.stdout instead of the whole result.'''
-        result = self.run(stdout=stdout, decode=decode, sh_trim=sh_trim,
-                          **run_kwargs)
-        return result.stdout
+        or $() in the shell. This is a wrapper around run() which captures
+        stdout, decodes it, trims it, and returns it directly.'''
+        result = self.stdout(CAPTURE).run()
+        stdout_str = decode_with_universal_newlines(result.stdout)
+        return stdout_str.rstrip('\n')
 
     def pipe(self, right_side):
         return Pipe(self, right_side)
@@ -58,21 +64,32 @@ class Expression:
     def then(self, right_side):
         return Then(self, right_side)
 
-    def subshell(self, **cmd_kwargs):
-        '''For applying IO arguments to an entire expression. Normally you do
-        this with arguments to run(), but sometimes you need to do further
-        composition. For example:
+    def stdin(self, source):
+        return Stdin(self, source)
 
-            some_expression.subshell(stderr=STDOUT).pipe(another_expression)
-        '''
-        ioargs = parse_cmd_kwargs(**cmd_kwargs)
-        return Subshell(self, ioargs)
+    def stdout(self, sink):
+        return Stdout(self, sink)
+
+    def stderr(self, sink):
+        return Stdout(self, sink)
+
+    def cwd(self, path):
+        return Cwd(self, path)
+
+    def env(self, name, val):
+        return Env(self, name, val)
+
+    def env_remove(self, name):
+        return EnvRemove(self, name)
+
+    def env_clear(self):
+        return EnvClear(self)
 
 
-Result = namedtuple('Result', ['returncode', 'stdout', 'stderr'])
+Result = namedtuple('Result', ['status', 'stdout', 'stderr'])
 
 
-class CheckedError(subprocess.CalledProcessError):
+class StatusError(subprocess.CalledProcessError):
     def __init__(self, result, expression):
         self.result = result
         self.expression = expression
@@ -80,26 +97,6 @@ class CheckedError(subprocess.CalledProcessError):
     def __str__(self):
         return 'Expression {0} returned non-zero exit status: {1}'.format(
             self.expression, self.result)
-
-
-# Implementation Details
-# ======================
-
-# Set up any readers or writers, kick off the recurisve _exec(), and collect
-# the results. This is the core of the execution methods, run() and read().
-def run_expression(expr, decode, sh_trim, ioargs):
-    default_iocontext = IOContext()
-    with default_iocontext.child_context(ioargs) as iocontext:
-        # Kick off the child processes.
-        returncode = expr._exec(iocontext)
-    stdout_result = process_output_result(
-        iocontext.stdout_result(), decode, sh_trim)
-    stderr_result = process_output_result(
-        iocontext.stderr_result(), decode, sh_trim)
-    result = Result(returncode, stdout_result, stderr_result)
-    if ioargs.check and returncode != 0:
-        raise CheckedError(result, expr)
-    return result
 
 
 def process_output_result(result, decode, sh_trim):
@@ -123,17 +120,17 @@ class Cmd(Expression):
         to strings.'''
         prog_str = stringify_with_dot_if_path(prog)
         args_strs = tuple(stringify_if_path(arg) for arg in args)
-        self._tuple = (prog_str,) + args_strs
+        self._argv = (prog_str,) + args_strs
 
     def _exec(self, context):
         proc = safe_popen(
-            self._tuple, cwd=context.cwd, env=context.env,
+            self._argv, cwd=context.cwd, env=context.env,
             stdin=context.stdin_pipe, stdout=context.stdout_pipe,
             stderr=context.stderr_pipe)
         return proc.wait()
 
     def __repr__(self):
-        return expression_repr('cmd', self._tuple, self._ioargs)
+        return expression_repr('cmd', self._argv, self._ioargs)
 
 
 class Sh(Expression):
@@ -193,22 +190,17 @@ class Pipe(Expression):
         # receive EOF, and closing the read end allows the left side to receive
         # SIGPIPE.
         read_pipe, write_pipe = open_pipe()
+        right_context = context._replace(stdin=read_pipe)
+        left_context = copy_iocontext(context)._replace(stdout=write_pipe)
 
         def do_left():
-            left_ioargs = parse_cmd_kwargs(stdout=write_pipe)
-            # Figure out what goes here.
-            # left_iocm = context.child_context(left_ioargs)
             with write_pipe:
-                with left_iocm as iocontext:
-                    return self._left._exec(iocontext)
+                return self._left._exec(left_context)
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
-        right_ioargs = parse_cmd_kwargs(stdin=read_pipe)
-        # right_iocm = context.child_context(right_ioargs)
         with read_pipe:
-            with right_iocm as iocontext:
-                right_status = self._right._exec(iocontext)
+            right_status = self._right._exec(right_context)
         left_status = left_thread.join()
 
         # Return the rightmost error, if any. Note that cwd and env changes
@@ -322,6 +314,9 @@ def copy_iocontext(context):
     # the other side.
     copy = IOContext(*context)
     return copy._replace(env=context.env.copy())
+
+
+# TODO: Delete a lot of this stuff below.
 
 
 # Yields a read pipe.
