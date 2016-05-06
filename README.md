@@ -55,17 +55,17 @@ output = pipeline.read()  # This raises an exception! See below.
 Because `grep` in the example above doesn't match any lines, it's going
 to return an error code, and duct will raise an exception. To prevent
 the exception, use `check=False`. If you pass that to `run`, the
-expression's exit status will be the `returncode` attribute on the
-result, just like `subprocess.run` in Python 3.5. If you pass it to part
-of an expression, like `cmd`, it will force just that part to return
-`0`, though other parts could still return errors.
+expression's exit status will be the `status` attribute on the result,
+just like `subprocess.run` in Python 3.5. If you pass it to part of an
+expression, like `cmd`, it will force just that part to return `0`,
+though other parts could still return errors.
 
 ```python
 result = cmd('false').run(check=False)
-print(result.returncode)  # 1
+print(result.status)  # 1
 
 result = cmd('false', check=False).run()
-print(result.returncode)  # 0
+print(result.status)  # 0
 ```
 
 Note that duct treats errors in a pipe like bash's `pipefail` option:
@@ -120,10 +120,10 @@ because shell escaping is tricky.
 <strong><tt>run</tt></strong>(<em>\*\*kwargs</em>)
 
 Execute the expression and return a `Result` object, which has fields
-`stdout`, `stderr`, and `returncode`. By default, the child process
-shares the stdin/stdout/stderr pipes of the parent, and no output is
-captured. If the expression has a non-zero returncode, `run` will raise
-an exception. Use `check=False` to allow non-zero returncodes.
+`stdout`, `stderr`, and `status`. By default, the child process shares
+the stdin/stdout/stderr pipes of the parent, and no output is captured.
+If the expression has a non-zero status, `run` will raise an exception.
+Use `check=False` to allow non-zero status.
 
 <strong><tt>read</tt></strong>(<em>\*\*kwargs</em>)
 
@@ -135,15 +135,15 @@ result.
 <strong><tt>pipe</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
 
 Create a pipe expression, similar to `|` in bash. The the right is any
-duct expression. The returncode of a pipe expression is equal to the
-right side's returncode if it's nonzero, otherwise the left side's.
+duct expression. The status of a pipe expression is equal to the right
+side's status if it's nonzero, otherwise the left side's.
 
 <strong><tt>then</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
 
 Create a sequence expression, similar to `&&` in bash, with syntax like
-`pipe` above. The left side runs, and then if its returncode is zero,
-the right side runs. If you want to ignore errors on the left side,
-similar to `;` in bash, use `check=False` inside the left expression.
+`pipe` above. The left side runs, and then if its status is zero, the
+right side runs. If you want to ignore errors on the left side, similar
+to `;` in bash, use `check=False` inside the left expression.
 
 <strong><tt>subshell</tt></strong>(<em>\*\*kwargs</em>)
 
@@ -211,8 +211,7 @@ any other variables set with `env` or `full_env` at the run level.
 
 Defaults to `True`. If `False` at the expression level, that expression
 always returns exit status `0`. If `False` at the run level, `run` will
-return results with a nonzero `returncode`, instead of raising an
-exception.
+return results with a nonzero `status`, instead of raising an exception.
 
 <strong><tt>decode</tt></strong>
 
