@@ -283,66 +283,45 @@ def parse_cmd_kwargs(input=None, stdin=None, stdout=None, stderr=None,
     return IOArgs(input, stdin, stdout, stderr, cwd, env, full_env, check)
 
 
-class IOContext:
-    '''Both run methods and individual expressions might need to open files or
-    kick off IO threads, depending on the parameters given. This class both
-    interprets IO parameters and acts as a context manager for the resources it
-    opens.'''
+# The IOContext represents the child process environment at any given point in
+# the execution of an expression. We read the working directory and the entire
+# environment when we create a new execution context. Methods like .env(),
+# .cwd(), and .pipe() will create new modified contexts and pass those to their
+# children. The IOContext does *not* own any of the file descriptors it's
+# holding -- it's the caller's responsibility to close those.
+IOContext = namedtuple("IOContext", [
+    "stdin",
+    "stdout",
+    "stderr",
+    "cwd",
+    "env",
+    "stdout_capture",
+    "stderr_capture",
+])
 
+
+def starter_iocontext(self, stdout_capture, stderr_capture):
     # Hardcode the standard file descriptors. We can't rely on None here,
     # becase STDOUT/STDERR swapping needs to work.
-    def __init__(self, stdin_pipe=0, stdout_pipe=1, stdout_reader=None,
-                 stderr_pipe=2, stderr_reader=None, cwd=None,
-                 full_env=None):
-        self.stdin_pipe = stdin_pipe
-        self.stdout_pipe = stdout_pipe
-        self.stderr_pipe = stderr_pipe
-        self.cwd = cwd
-        self.full_env = full_env
-        # The two reader members are threads. After an IOContext is exited
-        # (that is, after the close of the with-block that starts it),
-        # stdout_result() and stderr_result() expose the values returned by
-        # these threads.
-        self._stdout_reader = stdout_reader
-        self._stderr_reader = stderr_reader
+    return IOContext(
+        stdin=0,
+        stdout=1,
+        stderr=2,
+        cwd=os.getcwd(),
+        env=os.environ.copy(),
+        stdout_capture=stdout_capture,
+        stderr_capture=stderr_capture,
+    )
 
-    def stdout_result(self):
-        if self._stdout_reader is None:
-            return None
-        if self._stdout_reader.is_alive():
-            raise RuntimeError("The stdout reader is still alive.")
-        return self._stdout_reader.join()
 
-    def stderr_result(self):
-        if self._stderr_reader is None:
-            return None
-        if self._stderr_reader.is_alive():
-            raise RuntimeError("The stderr reader is still alive.")
-        return self._stderr_reader.join()
-
-    @contextmanager
-    def child_context(self, ioargs):
-        '''This is the top level context manager for any files we open or
-        threads we spawn. This is used both when we kick off execution of a
-        whole expression, and when individual parts of that expression
-        interpret their IO arguments. Values like None and STDOUT are
-        interpreted relative to the parent context (that is, self). The either
-        the new child context gets passed to subexpressions, or the pipes it
-        holds are used to execute a real command.'''
-        cwd = self.cwd if ioargs.cwd is None else ioargs.cwd
-        full_env = make_full_env(self.full_env, ioargs.env, ioargs.full_env)
-        stdin_cm = child_input_pipe(
-            self.stdin_pipe, ioargs.input, ioargs.stdin)
-        stdout_cm = child_output_pipe(self.stdout_pipe, ioargs.stdout)
-        stderr_cm = child_output_pipe(self.stderr_pipe, ioargs.stderr)
-        with stdin_cm as stdin_pipe:
-            with stdout_cm as (pre_swap_stdout_pipe, stdout_reader):
-                with stderr_cm as (pre_swap_stderr_pipe, stderr_reader):
-                    stdout_pipe, stderr_pipe = apply_swaps(
-                        ioargs.stdout, ioargs.stderr,
-                        pre_swap_stdout_pipe, pre_swap_stderr_pipe)
-                    yield IOContext(stdin_pipe, stdout_pipe, stdout_reader,
-                                    stderr_pipe, stderr_reader, cwd, full_env)
+def copy_iocontext(context):
+    # Although an IOContext doesn't own its descriptors, it does own its
+    # environment dictionary. When copying a context (mainly to send it down
+    # the other side of a pipe) we need to avoid holding a reference to that
+    # dictionary, so that variables defined on one side of a pipe don't affect
+    # the other side.
+    copy = IOContext(*context)
+    return copy._replace(env=context.env.copy())
 
 
 # Yields a read pipe.
@@ -493,21 +472,6 @@ def spawn_output_reader():
         # iovalue it collects.
         yield write, thread
     thread.join()
-
-
-def make_full_env(parent_env, env, full_env):
-    '''We support the 'env' parameter to add environment variables to the
-    default environment (this differs from subprocess's standard behavior, but
-    it's by far the most common use case), and the 'full_env' parameter to
-    supply the entire environment. Callers shouldn't supply both in one place,
-    but it's possible for parameters on individual commands to edit or override
-    what's given to run().'''
-    if full_env is not None:
-        return full_env
-    ret = os.environ.copy() if parent_env is None else parent_env.copy()
-    if env is not None:
-        ret.update(env)
-    return ret
 
 
 def stringify_if_path(x):
