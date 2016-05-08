@@ -67,6 +67,9 @@ class Expression:
     def stdin(self, source):
         return Stdin(self, source)
 
+    def input(self, buf):
+        return Input(self, buf)
+
     def stdout(self, sink):
         return Stdout(self, sink)
 
@@ -212,6 +215,97 @@ class Pipe(Expression):
 
     def __repr__(self):
         return "{0}.pipe({1})".format(repr(self._left), repr(self._right))
+
+
+class IORedirectExpression(Expression):
+    def __init__(self, inner_expression):
+        self._inner = inner_expression
+
+    def _exec(self, context):
+        with self._update_context(context) as updated_context:
+            return self._inner._exec(updated_context)
+
+    # implemented by subclasses
+    @contextmanager
+    def _update_context(self, context):
+        raise NotImplementedError
+
+
+class Stdin(IORedirectExpression):
+    def __init__(self, inner, source):
+        super().__init__(inner)
+        self._source = source
+
+    @contextmanager
+    def _update_context(self, context):
+        raise NotImplementedError
+
+
+class Input(IORedirectExpression):
+    def __init__(self, inner, buf):
+        super().__init__(inner)
+        self._buf = buf
+
+    @contextmanager
+    def _update_context(self, context):
+        raise NotImplementedError
+
+
+class Stdout(IORedirectExpression):
+    def __init__(self, inner, sink):
+        super().__init__(inner)
+        self._sink = sink
+
+    @contextmanager
+    def _update_context(self, context):
+        raise NotImplementedError
+
+
+class Stderr(IORedirectExpression):
+    def __init__(self, inner, sink):
+        super().__init__(inner)
+        self._sink = sink
+
+    @contextmanager
+    def _update_context(self, context):
+        raise NotImplementedError
+
+
+class Cwd(IORedirectExpression):
+    def __init__(self, inner, path):
+        super().__init__(inner)
+        self._path = path
+
+    @contextmanager
+    def _update_context(self, context):
+        raise NotImplementedError
+
+
+class Env(IORedirectExpression):
+    def __init__(self, inner, name, val):
+        super().__init__(inner)
+        self._name = name
+        self._val = val
+
+    @contextmanager
+    def _update_context(self, context):
+        raise NotImplementedError
+
+
+class EnvRemove(IORedirectExpression):
+    def __init__(self, inner, name):
+        super().__init__(inner)
+        self._name = name
+
+    @contextmanager
+    def _update_context(self, context):
+        raise NotImplementedError
+
+
+class EnvClear(IORedirectExpression):
+    @contextmanager
+    def _update_context(self, context):
+        raise NotImplementedError
 
 
 def open_pipe():
@@ -495,7 +589,7 @@ def stringify_with_dot_if_path(x):
 def expression_repr(name, args, ioargs, **kwargs):
     '''Handle all the shared logic for printing expression arguments.'''
     constants = {
-        PIPE: "PIPE",
+        CAPTURE: "CAPTURE",
         STDOUT: "STDOUT",
         DEVNULL: "DEVNULL",
         STDERR: "STDERR",
