@@ -102,19 +102,6 @@ class StatusError(subprocess.CalledProcessError):
             self.expression, self.result)
 
 
-def process_output_result(result, decode, sh_trim):
-    '''This function takes care of decoding Unicode bytes, universalizing
-    newlines, and trimming tailing newlines, as appropriate.'''
-    if result is None:
-        return None
-    if not decode:
-        return result
-    decoded_result = decode_with_universal_newlines(result)
-    if sh_trim:
-        decoded_result = decoded_result.rstrip('\n')
-    return decoded_result
-
-
 class Cmd(Expression):
     def __init__(self, prog, args):
         '''The prog and args will be passed directly to subprocess.call(),
@@ -314,61 +301,6 @@ def open_pipe():
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
 
 
-class ThreadWithReturn(threading.Thread):
-    '''The standard Thread class doesn't give us any way to access the return
-    value of the target function, or to see any exceptions that might've gotten
-    thrown. This is a thin wrapper around Thread that enhances the join
-    function to return values and reraise exceptions.'''
-    def __init__(self, target, args=(), kwargs=None, **thread_kwargs):
-        threading.Thread.__init__(self, **thread_kwargs)
-        self._target = target
-        self._args = args
-        self._kwargs = kwargs or {}
-        self._return = None
-        self._exception = None
-
-    def run(self):
-        try:
-            self._return = self._target(*self._args, **self._kwargs)
-        except Exception as e:
-            self._exception = e
-
-    def join(self):
-        threading.Thread.join(self)
-        if self._exception is not None:
-            raise self._exception
-        return self._return
-
-
-IOArgs = namedtuple('IOArgs', ['input', 'stdin', 'stdout', 'stderr', 'cwd',
-                               'env', 'full_env', 'check'])
-
-
-def parse_cmd_kwargs(input=None, stdin=None, stdout=None, stderr=None,
-                     cwd=None, env=None, full_env=None, check=True):
-    '''We define this constructor function so that we can do early error
-    checking on IO arguments. Other constructors can pass their keyword args
-    here as part of __init__, rather than holding them until _exec, so that
-    invalid keywords cause errors in the right place. This also lets us do some
-    consistency checks early, like prohibiting using input and stdin at the
-    same time.
-
-    If we only needed to support Python 3, we might handle the "check" keyword
-    arg separately from this function. It's not intended to be inherited by
-    subexpressions, so it doesn't live in the IOArgs. However, Python 2 doesn't
-    support syntax like this:
-
-        def f(*args, check=True, **kwargs):  # only valid in Python 3!
-
-    So we have to handle "check" in the same kwargs dict, and parse it out
-    here.'''
-    if input is not None and stdin is not None:
-        raise ValueError('stdin and input arguments may not both be used.')
-    if env is not None and full_env is not None:
-        raise ValueError('env and full_env arguments may not both be used.')
-    return IOArgs(input, stdin, stdout, stderr, cwd, env, full_env, check)
-
-
 # The IOContext represents the child process environment at any given point in
 # the execution of an expression. We read the working directory and the entire
 # environment when we create a new execution context. Methods like .env(),
@@ -505,10 +437,6 @@ def open_path(iovalue, mode):
         yield f
 
 
-def wants_input_writer(input_arg):
-    return isinstance(input_arg, (str, bytes))
-
-
 try:
     # not defined in Python 2
     PIPE_CLOSED_ERROR = BrokenPipeError
@@ -540,10 +468,6 @@ def spawn_input_writer(input_arg):
     with read:
         yield read
     thread.join()
-
-
-def wants_output_reader(output_arg):
-    return output_arg == PIPE
 
 
 @contextmanager
@@ -609,6 +533,32 @@ def expression_repr(name, args, ioargs, **kwargs):
         if val != keyword_defaults.get(key, None):
             parts.append(key + '=' + val_repr)
     return name + '(' + ', '.join(parts) + ')'
+
+
+class ThreadWithReturn(threading.Thread):
+    '''The standard Thread class doesn't give us any way to access the return
+    value of the target function, or to see any exceptions that might've gotten
+    thrown. This is a thin wrapper around Thread that enhances the join
+    function to return values and reraise exceptions.'''
+    def __init__(self, target, args=(), kwargs=None, **thread_kwargs):
+        threading.Thread.__init__(self, **thread_kwargs)
+        self._target = target
+        self._args = args
+        self._kwargs = kwargs or {}
+        self._return = None
+        self._exception = None
+
+    def run(self):
+        try:
+            self._return = self._target(*self._args, **self._kwargs)
+        except Exception as e:
+            self._exception = e
+
+    def join(self):
+        threading.Thread.join(self)
+        if self._exception is not None:
+            raise self._exception
+        return self._return
 
 
 popen_lock = threading.Lock()
