@@ -181,7 +181,7 @@ class Pipe(Expression):
         # SIGPIPE.
         read_pipe, write_pipe = open_pipe()
         right_context = context._replace(stdin=read_pipe)
-        left_context = copy_iocontext(context)._replace(stdout=write_pipe)
+        left_context = context._replace(stdout=write_pipe)
 
         def do_left():
             with write_pipe:
@@ -218,6 +218,22 @@ class IORedirectExpression(Expression):
         raise NotImplementedError
 
 
+class Input(IORedirectExpression):
+    def __init__(self, inner, arg):
+        super().__init__(inner)
+        # If the argument is a string, convert it to bytes.
+        # TODO: Might be cheaper to open the pipe in text mode.
+        if isinstance(arg, str):
+            self._buf = encode_with_universal_newlines(arg)
+        else:
+            self._buf = arg
+
+    @contextmanager
+    def _update_context(self, context):
+        with spawn_input_writer(self._buf) as read_pipe:
+            yield context._replace(stdin=read_pipe)
+
+
 class Stdin(IORedirectExpression):
     def __init__(self, inner, source):
         super().__init__(inner)
@@ -225,17 +241,8 @@ class Stdin(IORedirectExpression):
 
     @contextmanager
     def _update_context(self, context):
-        raise NotImplementedError
-
-
-class Input(IORedirectExpression):
-    def __init__(self, inner, buf):
-        super().__init__(inner)
-        self._buf = buf
-
-    @contextmanager
-    def _update_context(self, context):
-        raise NotImplementedError
+        with child_stdin_pipe(self._source) as read_pipe:
+            yield context._replace(stdin=read_pipe)
 
 
 class Stdout(IORedirectExpression):
@@ -245,7 +252,8 @@ class Stdout(IORedirectExpression):
 
     @contextmanager
     def _update_context(self, context):
-        raise NotImplementedError
+        with child_output_pipe(self._source) as write_pipe:
+            yield context._replace(stdout=write_pipe)
 
 
 class Stderr(IORedirectExpression):
@@ -255,28 +263,33 @@ class Stderr(IORedirectExpression):
 
     @contextmanager
     def _update_context(self, context):
-        raise NotImplementedError
+        with child_output_pipe(self._source) as write_pipe:
+            yield context._replace(stderr=write_pipe)
 
 
 class Cwd(IORedirectExpression):
     def __init__(self, inner, path):
         super().__init__(inner)
-        self._path = path
+        self._path = stringify_if_path(path)
 
     @contextmanager
     def _update_context(self, context):
-        raise NotImplementedError
+        yield context._replace(cwd=self._path)
 
 
 class Env(IORedirectExpression):
     def __init__(self, inner, name, val):
         super().__init__(inner)
         self._name = name
-        self._val = val
+        self._val = stringify_if_path(val)
 
     @contextmanager
     def _update_context(self, context):
-        raise NotImplementedError
+        # Pretend the IOContext is totally immutable. Copy its environment
+        # dictionary instead of modifying it in place.
+        new_env = context.env.copy()
+        new_env[self._name] = self._val
+        yield context._replace(env=new_env)
 
 
 class EnvRemove(IORedirectExpression):
@@ -286,13 +299,19 @@ class EnvRemove(IORedirectExpression):
 
     @contextmanager
     def _update_context(self, context):
-        raise NotImplementedError
+        # Pretend the IOContext is totally immutable. Copy its environment
+        # dictionary instead of modifying it in place.
+        new_env = context.env.copy()
+        del new_env[self._name]
+        yield context._replace(env=new_env)
 
 
 class EnvClear(IORedirectExpression):
     @contextmanager
     def _update_context(self, context):
-        raise NotImplementedError
+        # Pretend the IOContext is totally immutable. Copy its environment
+        # dictionary instead of modifying it in place.
+        yield context._replace(env={})
 
 
 def open_pipe():
@@ -326,20 +345,11 @@ def starter_iocontext(self, stdout_capture, stderr_capture):
         stdout=1,
         stderr=2,
         cwd=os.getcwd(),
+        # Pretend this dictionary is immutable please.
         env=os.environ.copy(),
         stdout_capture=stdout_capture,
         stderr_capture=stderr_capture,
     )
-
-
-def copy_iocontext(context):
-    # Although an IOContext doesn't own its descriptors, it does own its
-    # environment dictionary. When copying a context (mainly to send it down
-    # the other side of a pipe) we need to avoid holding a reference to that
-    # dictionary, so that variables defined on one side of a pipe don't affect
-    # the other side.
-    copy = IOContext(*context)
-    return copy._replace(env=context.env.copy())
 
 
 # TODO: Delete a lot of this stuff below.
@@ -347,20 +357,10 @@ def copy_iocontext(context):
 
 # Yields a read pipe.
 @contextmanager
-def child_input_pipe(parent_pipe, input_arg, stdin_arg):
-    # Check the input parameter first, because stdin will be None if input is
-    # set, and we don't want to short circuit. (None is an otherwise valid
-    # stdin value, meaning "inherit the current context's stdin".)
-    if wants_input_writer(input_arg):
-        with spawn_input_writer(input_arg) as read:
-            yield read
-    elif input_arg is not None:
-        raise TypeError("Not a valid input parameter: " + repr(input_arg))
-    elif stdin_arg is None:
-        yield parent_pipe
-    elif is_pipe_already(stdin_arg):
+def child_stdin_pipe(stdin_arg):
+    if is_pipe_already(stdin_arg):
         yield stdin_arg
-    elif is_devnull(stdin_arg):
+    elif stdin_arg == DEVNULL:
         with open_devnull('r') as read:
             yield read
     elif is_path(stdin_arg):
@@ -372,35 +372,21 @@ def child_input_pipe(parent_pipe, input_arg, stdin_arg):
 
 # Yields both a write pipe and an optional output reader thread.
 @contextmanager
-def child_output_pipe(default_pipe, output_arg):
-    # Swap flags (STDOUT, STDERR) have to be handled in a later step, because
-    # e.g. the new stderr pipe won't be ready yet when we're preparing stdout.
-    if output_arg is None or is_swap(output_arg):
-        yield default_pipe, None
-    elif is_pipe_already(output_arg):
-        yield output_arg, None
-    elif is_devnull(output_arg):
+def child_output_pipe(parent_context, output_arg):
+    if is_pipe_already(output_arg):
+        yield output_arg
+    elif output_arg == DEVNULL:
         with open_devnull('w') as write:
-            yield write, None
+            yield write
+    elif output_arg == STDOUT:
+        yield parent_context.stdout
+    elif output_arg == STDERR:
+        yield parent_context.stderr
     elif is_path(output_arg):
         with open_path(output_arg, 'w') as write:
-            yield write, None
-    elif wants_output_reader(output_arg):
-        with spawn_output_reader() as (write, thread):
-            yield write, thread
+            yield write
     else:
         raise TypeError("Not a valid output parameter: " + repr(output_arg))
-
-
-def is_swap(output_arg):
-    return output_arg in (STDOUT, STDERR)
-
-
-def apply_swaps(stdout_arg, stderr_arg, stdout_pipe, stderr_pipe):
-    # Note that stdout=STDOUT and stderr=STDERR are no-ops.
-    new_stdout = stderr_pipe if stdout_arg == STDERR else stdout_pipe
-    new_stderr = stdout_pipe if stderr_arg == STDOUT else stderr_pipe
-    return new_stdout, new_stderr
 
 
 def is_pipe_already(iovalue):
@@ -416,10 +402,6 @@ def is_pipe_already(iovalue):
         return isinstance(iovalue, int) and iovalue >= 0
 
 
-def is_devnull(iovalue):
-    return iovalue == DEVNULL
-
-
 @contextmanager
 def open_devnull(mode):
     # We open devnull ourselves because Python 2 doesn't support DEVNULL.
@@ -428,6 +410,7 @@ def open_devnull(mode):
 
 
 def is_path(iovalue):
+    # TODO: What about bytearray etc.?
     return isinstance(iovalue, (str, bytes, PurePath))
 
 
@@ -445,16 +428,10 @@ except NameError:
 
 
 @contextmanager
-def spawn_input_writer(input_arg):
+def spawn_input_writer(input_bytes):
     read, write = open_pipe()
 
     def write_thread():
-        # If the argument is a string, convert it to bytes first.
-        if isinstance(input_arg, str):
-            input_bytes = encode_with_universal_newlines(input_arg)
-        else:
-            input_bytes = input_arg
-
         with write:
             # If the write blocks on a full pipe buffer (default 64 KB on
             # Linux), and then the program on the other end quits before
@@ -491,11 +468,6 @@ def stringify_if_path(x):
     if isinstance(x, PurePath):
         return str(x)
     return x
-
-
-def stringify_paths_in_dict(d):
-    return dict((stringify_if_path(key), stringify_if_path(val))
-                for key, val in d.items())
 
 
 def stringify_with_dot_if_path(x):
