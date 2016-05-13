@@ -43,8 +43,8 @@ class Expression:
             with spawn_output_reader() as (stderr_capture, stderr_thread):
                 context = starter_iocontext(stdout_capture, stderr_capture)
                 status = self._exec(context)
-                stdout_bytes = stdout_thread.join()
-                stderr_bytes = stderr_thread.join()
+        stdout_bytes = stdout_thread.join()
+        stderr_bytes = stderr_thread.join()
         result = Result(status, stdout_bytes, stderr_bytes)
         if status != 0:
             raise StatusError(result, self)
@@ -64,17 +64,17 @@ class Expression:
     def then(self, right_side):
         return Then(self, right_side)
 
-    def stdin(self, source):
-        return Stdin(self, source)
-
     def input(self, buf):
         return Input(self, buf)
+
+    def stdin(self, source):
+        return Stdin(self, source)
 
     def stdout(self, sink):
         return Stdout(self, sink)
 
     def stderr(self, sink):
-        return Stdout(self, sink)
+        return Stderr(self, sink)
 
     def cwd(self, path):
         return Cwd(self, path)
@@ -125,9 +125,8 @@ class Cmd(Expression):
 
     def _exec(self, context):
         proc = safe_popen(
-            self._argv, cwd=context.cwd, env=context.env,
-            stdin=context.stdin_pipe, stdout=context.stdout_pipe,
-            stderr=context.stderr_pipe)
+            self._argv, cwd=context.cwd, env=context.env, stdin=context.stdin,
+            stdout=context.stdout, stderr=context.stderr)
         return proc.wait()
 
     def __repr__(self):
@@ -143,8 +142,7 @@ class Sh(Expression):
     def _exec(self, context):
         proc = safe_popen(
             self._shell_cmd, shell=True, cwd=context.cwd, env=context.env,
-            stdin=context.stdin_pipe, stdout=context.stdout_pipe,
-            stderr=context.stderr_pipe)
+            stdin=context.stdin, stdout=context.stdout, stderr=context.stderr)
         return proc.wait()
 
     def __repr__(self):
@@ -217,19 +215,19 @@ class Pipe(Expression):
 
 class Ignore(Expression):
     def __init__(self, inner_expression):
-        self._inner = repr(inner_expression)
+        self._inner = inner_expression
 
     def _exec(self, context):
         self._inner._exec(context)
         return 0
 
     def __repr__(self):
-        return "{0}.ignore()".format(self._inner)
+        return "{0}.ignore()".format(repr(self._inner))
 
 
 class IORedirectExpression(Expression):
     def __init__(self, inner_expression, name, args):
-        self._inner = repr(inner_expression)
+        self._inner = inner_expression
         self._name = name
         self._args = ", ".join(ioarg_repr(arg) for arg in args)
 
@@ -238,7 +236,7 @@ class IORedirectExpression(Expression):
             return self._inner._exec(updated_context)
 
     def __repr__(self):
-        return "{0}.{1}({2})".format(self._inner, self._name, self._args)
+        return "{0}.{1}({2})".format(repr(self._inner), self._name, self._args)
 
     # Implemented by subclasses.
 
@@ -280,7 +278,10 @@ class Stdout(IORedirectExpression):
 
     @contextmanager
     def _update_context(self, context):
-        with child_output_pipe(self._source) as write_pipe:
+        with child_output_pipe(context.stdout,
+                               context.stderr,
+                               context.stdout_capture,
+                               self._sink) as write_pipe:
             yield context._replace(stdout=write_pipe)
 
 
@@ -291,7 +292,10 @@ class Stderr(IORedirectExpression):
 
     @contextmanager
     def _update_context(self, context):
-        with child_output_pipe(self._source) as write_pipe:
+        with child_output_pipe(context.stdout,
+                               context.stderr,
+                               context.stderr_capture,
+                               self._sink) as write_pipe:
             yield context._replace(stderr=write_pipe)
 
 
@@ -362,7 +366,7 @@ IOContext = namedtuple("IOContext", [
 ])
 
 
-def starter_iocontext(self, stdout_capture, stderr_capture):
+def starter_iocontext(stdout_capture, stderr_capture):
     # Hardcode the standard file descriptors. We can't rely on None here,
     # becase STDOUT/STDERR swapping needs to work.
     return IOContext(
@@ -392,26 +396,30 @@ def child_stdin_pipe(stdin_arg):
         with open_path(stdin_arg, 'r') as read:
             yield read
     else:
-        raise TypeError("Not a valid stdin parameter: " + repr(stdin_arg))
+        raise TypeError(
+            "Not a valid stdin parameter: " + ioarg_repr(stdin_arg))
 
 
 # Yields both a write pipe and an optional output reader thread.
 @contextmanager
-def child_output_pipe(parent_context, output_arg):
+def child_output_pipe(stdout_pipe, stderr_pipe, capture_pipe, output_arg):
     if is_pipe_already(output_arg):
         yield output_arg
     elif output_arg == DEVNULL:
         with open_devnull('w') as write:
             yield write
     elif output_arg == STDOUT:
-        yield parent_context.stdout
+        yield stdout_pipe
     elif output_arg == STDERR:
-        yield parent_context.stderr
+        yield stderr_pipe
+    elif output_arg == CAPTURE:
+        yield capture_pipe
     elif is_path(output_arg):
         with open_path(output_arg, 'w') as write:
             yield write
     else:
-        raise TypeError("Not a valid output parameter: " + repr(output_arg))
+        raise TypeError(
+            "Not a valid output parameter: " + ioarg_repr(output_arg))
 
 
 def is_pipe_already(iovalue):
