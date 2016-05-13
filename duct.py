@@ -120,7 +120,7 @@ class Cmd(Expression):
         return proc.wait()
 
     def __repr__(self):
-        return expression_repr('cmd', self._argv, self._ioargs)
+        return 'cmd({0})'.format(', '.join(repr(arg) for arg in self._argv))
 
 
 class Sh(Expression):
@@ -137,7 +137,7 @@ class Sh(Expression):
         return proc.wait()
 
     def __repr__(self):
-        return expression_repr('sh', [self._shell_cmd], self._ioargs)
+        return "sh({0})".format(repr(self._shell_cmd))
 
 
 class Then(Expression):
@@ -205,22 +205,22 @@ class Pipe(Expression):
 
 
 class IORedirectExpression(Expression):
-    def __init__(self, inner_expression):
-        self._inner = inner_expression
+    def __init__(self, inner_expression, name, args):
+        self._inner = repr(inner_expression)
+        self._name = name
+        self._args = ", ".join(ioarg_repr(arg) for arg in args)
 
     def _exec(self, context):
         with self._update_context(context) as updated_context:
             return self._inner._exec(updated_context)
 
-    # implemented by subclasses
-    @contextmanager
-    def _update_context(self, context):
-        raise NotImplementedError
+    def __repr__(self):
+        return "{0}.{1}({2})".format(self._inner, self._name, self._args)
 
 
 class Input(IORedirectExpression):
     def __init__(self, inner, arg):
-        super().__init__(inner)
+        super().__init__(inner, "input", [arg])
         # If the argument is a string, convert it to bytes.
         # TODO: Might be cheaper to open the pipe in text mode.
         if isinstance(arg, str):
@@ -236,7 +236,7 @@ class Input(IORedirectExpression):
 
 class Stdin(IORedirectExpression):
     def __init__(self, inner, source):
-        super().__init__(inner)
+        super().__init__(inner, "stdin", [source])
         self._source = source
 
     @contextmanager
@@ -247,7 +247,7 @@ class Stdin(IORedirectExpression):
 
 class Stdout(IORedirectExpression):
     def __init__(self, inner, sink):
-        super().__init__(inner)
+        super().__init__(inner, "stdout", [sink])
         self._sink = sink
 
     @contextmanager
@@ -258,7 +258,7 @@ class Stdout(IORedirectExpression):
 
 class Stderr(IORedirectExpression):
     def __init__(self, inner, sink):
-        super().__init__(inner)
+        super().__init__(inner, "stderr", [sink])
         self._sink = sink
 
     @contextmanager
@@ -269,7 +269,7 @@ class Stderr(IORedirectExpression):
 
 class Cwd(IORedirectExpression):
     def __init__(self, inner, path):
-        super().__init__(inner)
+        super().__init__(inner, "cwd", [path])
         self._path = stringify_if_path(path)
 
     @contextmanager
@@ -279,7 +279,7 @@ class Cwd(IORedirectExpression):
 
 class Env(IORedirectExpression):
     def __init__(self, inner, name, val):
-        super().__init__(inner)
+        super().__init__(inner, "env", [name, val])
         self._name = name
         self._val = stringify_if_path(val)
 
@@ -294,7 +294,7 @@ class Env(IORedirectExpression):
 
 class EnvRemove(IORedirectExpression):
     def __init__(self, inner, name):
-        super().__init__(inner)
+        super().__init__(inner, "env_remove", [name])
         self._name = name
 
     @contextmanager
@@ -307,6 +307,9 @@ class EnvRemove(IORedirectExpression):
 
 
 class EnvClear(IORedirectExpression):
+    def __init__(self, inner):
+        super().__init__(inner, "env_clear", [])
+
     @contextmanager
     def _update_context(self, context):
         # Pretend the IOContext is totally immutable. Copy its environment
@@ -482,29 +485,17 @@ def stringify_with_dot_if_path(x):
     return x
 
 
-def expression_repr(name, args, ioargs, **kwargs):
-    '''Handle all the shared logic for printing expression arguments.'''
+def ioarg_repr(arg):
     constants = {
-        CAPTURE: "CAPTURE",
         STDOUT: "STDOUT",
-        DEVNULL: "DEVNULL",
         STDERR: "STDERR",
+        DEVNULL: "DEVNULL",
+        CAPTURE: "CAPTURE",
     }
-    parts = [repr(i) for i in args]
-    kwargs.update(ioargs._asdict())
-    # Assume any keywords not listed default to None.
-    keyword_defaults = {'check': True}
-    # Only print fields with a non-default value. Also sort the keys
-    # alphabetically, so that the repr is stable for testing.
-    for key, val in sorted(kwargs.items()):
-        if isinstance(val, int) and val < 0:
-            # A duct constant. Print its name.
-            val_repr = constants[val]
-        else:
-            val_repr = repr(val)
-        if val != keyword_defaults.get(key, None):
-            parts.append(key + '=' + val_repr)
-    return name + '(' + ', '.join(parts) + ')'
+    if arg in constants:
+        return constants[arg]
+    else:
+        return repr(arg)
 
 
 class ThreadWithReturn(threading.Thread):
