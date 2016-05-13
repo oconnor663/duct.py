@@ -88,6 +88,17 @@ class Expression:
     def env_clear(self):
         return EnvClear(self)
 
+    def ignore(self):
+        return Ignore(self)
+
+    # Implemented by subclasses.
+
+    def _exec(self, context):
+        raise NotImplementedError
+
+    def __repr__(self):
+        raise NotImplementedError
+
 
 Result = namedtuple('Result', ['status', 'stdout', 'stderr'])
 
@@ -204,6 +215,18 @@ class Pipe(Expression):
         return "{0}.pipe({1})".format(repr(self._left), repr(self._right))
 
 
+class Ignore(Expression):
+    def __init__(self, inner_expression):
+        self._inner = repr(inner_expression)
+
+    def _exec(self, context):
+        self._inner._exec(context)
+        return 0
+
+    def __repr__(self):
+        return "{0}.ignore()".format(self._inner)
+
+
 class IORedirectExpression(Expression):
     def __init__(self, inner_expression, name, args):
         self._inner = repr(inner_expression)
@@ -216,6 +239,11 @@ class IORedirectExpression(Expression):
 
     def __repr__(self):
         return "{0}.{1}({2})".format(self._inner, self._name, self._args)
+
+    # Implemented by subclasses.
+
+    def _update_context(self, context):
+        raise NotImplementedError
 
 
 class Input(IORedirectExpression):
@@ -315,12 +343,6 @@ class EnvClear(IORedirectExpression):
         # Pretend the IOContext is totally immutable. Copy its environment
         # dictionary instead of modifying it in place.
         yield context._replace(env={})
-
-
-def open_pipe():
-    read_fd, write_fd = os.pipe()
-    read_mode, write_mode = ('rb', 'wb')
-    return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
 
 
 # The IOContext represents the child process environment at any given point in
@@ -522,6 +544,12 @@ class ThreadWithReturn(threading.Thread):
         if self._exception is not None:
             raise self._exception
         return self._return
+
+
+def open_pipe():
+    read_fd, write_fd = os.pipe()
+    read_mode, write_mode = ('rb', 'wb')
+    return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
 
 
 popen_lock = threading.Lock()
