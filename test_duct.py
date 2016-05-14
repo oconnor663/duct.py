@@ -117,9 +117,9 @@ def test_nonzero_status_throws():
 
 
 def test_ignore():
-    assert 0 == false.ignore().run().returncode
+    assert 0 == false().ignore().run().status
     with raises(StatusError) as e:
-        false.run()
+        false().run()
     assert e.value.result.status
 
 
@@ -147,7 +147,7 @@ def test_pipe_SIGPIPE():
 def test_then():
     print_a = cmd('python', '-c', 'print("A")')
     assert 'A' == true().then(print_a).read()
-    assert '' == false().then(print_a).read(check=False)
+    assert '' == false().then(print_a).ignore().read()
 
 
 def test_nesting():
