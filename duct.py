@@ -335,7 +335,7 @@ class EnvRemove(IORedirectExpression):
         # Pretend the IOContext is totally immutable. Copy its environment
         # dictionary instead of modifying it in place.
         new_env = context.env.copy()
-        del new_env[self._name]
+        new_env.pop(self._name, None)  # avoid throwing if undefined
         yield context._replace(env=new_env)
 
 

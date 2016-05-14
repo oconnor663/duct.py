@@ -175,6 +175,11 @@ def test_env():
     assert "foo" == echo_x().env('x', 'foo').read()
     if has_pathlib:
         assert "foo" == echo_x().env('x', Path('foo')).read()
+    # Test env_remove and env_clear.
+    assert "" == echo_x().env_remove('x').env('x', 'foo').read()
+    assert "" == echo_x().env_clear().env('x', 'foo').read()
+    # Check that env_remove is ok with the variable being undefined.
+    assert "" == echo_x().env_remove('x').env_clear().read()
 
 
 def test_input():
