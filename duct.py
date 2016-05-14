@@ -226,17 +226,18 @@ class Ignore(Expression):
 
 
 class IORedirectExpression(Expression):
-    def __init__(self, inner_expression, name, args):
+    def __init__(self, inner_expression, method_name, method_args):
         self._inner = inner_expression
-        self._name = name
-        self._args = ", ".join(ioarg_repr(arg) for arg in args)
+        self._method_name = method_name
+        self._method_args = ", ".join(ioarg_repr(arg) for arg in method_args)
 
     def _exec(self, context):
         with self._update_context(context) as updated_context:
             return self._inner._exec(updated_context)
 
     def __repr__(self):
-        return "{0}.{1}({2})".format(repr(self._inner), self._name, self._args)
+        return "{0}.{1}({2})".format(
+            repr(self._inner), self._method_name, self._method_args)
 
     # Implemented by subclasses.
 
