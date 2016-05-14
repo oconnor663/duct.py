@@ -163,12 +163,10 @@ def test_cwd():
     # because on OSX there's a symlink in there.
     tmpdir = os.path.realpath(tempfile.mkdtemp())
     another = os.path.realpath(tempfile.mkdtemp())
-    assert tmpdir == pwd().read(cwd=tmpdir)
-    assert tmpdir == pwd(cwd=tmpdir).read(cwd=another)
+    assert tmpdir == pwd().cwd(tmpdir).read()
+    assert tmpdir == pwd().cwd(tmpdir).cwd(another).read()
     if has_pathlib:
-        assert tmpdir == pwd().read(cwd=Path(tmpdir))
-        assert (tmpdir == pwd(cwd=Path(tmpdir))
-                .read(cwd='/something/else'))
+        assert tmpdir == pwd().cwd(Path(tmpdir)).read()
 
 
 def test_env():
