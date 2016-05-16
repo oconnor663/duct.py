@@ -329,7 +329,7 @@ def test_repr_round_trip():
 
     expressions = [
         "cmd('foo').ignore().env('a', 'b').env_remove('c').env_clear()",
-        "sh('bar').stdin(DEVNULL).input(b'')",
+        "sh('bar').stdin(DEVNULL).input('')",
         "cmd('foo').pipe(cmd('bar'))",
         "cmd('foo').pipe(sh('bar'))",
         "cmd('foo').then(cmd('bar'))",
