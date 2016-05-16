@@ -32,7 +32,7 @@ def sh(shell_str):
     return Sh(shell_str)
 
 
-class Expression:
+class Expression(object):
     'Abstract base class for all expression types.'
 
     def run(self):
@@ -247,7 +247,7 @@ class IORedirectExpression(Expression):
 
 class Input(IORedirectExpression):
     def __init__(self, inner, arg):
-        super().__init__(inner, "input", [arg])
+        super(Input, self).__init__(inner, "input", [arg])
         # If the argument is a string, convert it to bytes.
         # TODO: Might be cheaper to open the pipe in text mode.
         if isinstance(arg, str):
@@ -263,7 +263,7 @@ class Input(IORedirectExpression):
 
 class Stdin(IORedirectExpression):
     def __init__(self, inner, source):
-        super().__init__(inner, "stdin", [source])
+        super(Stdin, self).__init__(inner, "stdin", [source])
         self._source = source
 
     @contextmanager
@@ -274,7 +274,7 @@ class Stdin(IORedirectExpression):
 
 class Stdout(IORedirectExpression):
     def __init__(self, inner, sink):
-        super().__init__(inner, "stdout", [sink])
+        super(Stdout, self).__init__(inner, "stdout", [sink])
         self._sink = sink
 
     @contextmanager
@@ -288,7 +288,7 @@ class Stdout(IORedirectExpression):
 
 class Stderr(IORedirectExpression):
     def __init__(self, inner, sink):
-        super().__init__(inner, "stderr", [sink])
+        super(Stderr, self).__init__(inner, "stderr", [sink])
         self._sink = sink
 
     @contextmanager
@@ -302,7 +302,7 @@ class Stderr(IORedirectExpression):
 
 class Cwd(IORedirectExpression):
     def __init__(self, inner, path):
-        super().__init__(inner, "cwd", [path])
+        super(Cwd, self).__init__(inner, "cwd", [path])
         self._path = stringify_if_path(path)
 
     @contextmanager
@@ -312,7 +312,7 @@ class Cwd(IORedirectExpression):
 
 class Env(IORedirectExpression):
     def __init__(self, inner, name, val):
-        super().__init__(inner, "env", [name, val])
+        super(Env, self).__init__(inner, "env", [name, val])
         self._name = name
         self._val = stringify_if_path(val)
 
@@ -327,7 +327,7 @@ class Env(IORedirectExpression):
 
 class EnvRemove(IORedirectExpression):
     def __init__(self, inner, name):
-        super().__init__(inner, "env_remove", [name])
+        super(EnvRemove, self).__init__(inner, "env_remove", [name])
         self._name = name
 
     @contextmanager
@@ -341,7 +341,7 @@ class EnvRemove(IORedirectExpression):
 
 class EnvClear(IORedirectExpression):
     def __init__(self, inner):
-        super().__init__(inner, "env_clear", [])
+        super(EnvClear, self).__init__(inner, "env_clear", [])
 
     @contextmanager
     def _update_context(self, context):
