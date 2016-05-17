@@ -116,8 +116,8 @@ def test_nonzero_status_throws():
         false().run()
 
 
-def test_ignore():
-    assert 0 == false().ignore().run().status
+def test_unchecked():
+    assert 0 == false().unchecked().run().status
     with raises(StatusError) as e:
         false().run()
     assert e.value.result.status
@@ -147,7 +147,7 @@ def test_pipe_SIGPIPE():
 def test_then():
     print_a = cmd('python', '-c', 'print("A")')
     assert 'A' == true().then(print_a).read()
-    assert '' == false().then(print_a).ignore().read()
+    assert '' == false().then(print_a).unchecked().read()
 
 
 def test_nesting():
@@ -328,7 +328,7 @@ def test_repr_round_trip():
     literals, because Python 2 won't emit them.'''
 
     expressions = [
-        "cmd('foo').ignore().env('a', 'b').env_remove('c').env_clear()",
+        "cmd('foo').unchecked().env('a', 'b').env_remove('c').env_clear()",
         "sh('bar').stdin(DEVNULL).input('')",
         "cmd('foo').pipe(cmd('bar'))",
         "cmd('foo').pipe(sh('bar'))",

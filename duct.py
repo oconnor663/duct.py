@@ -88,8 +88,8 @@ class Expression(object):
     def env_clear(self):
         return EnvClear(self)
 
-    def ignore(self):
-        return Ignore(self)
+    def unchecked(self):
+        return Unchecked(self)
 
     # Implemented by subclasses.
 
@@ -213,7 +213,7 @@ class Pipe(Expression):
         return "{0}.pipe({1})".format(repr(self._left), repr(self._right))
 
 
-class Ignore(Expression):
+class Unchecked(Expression):
     def __init__(self, inner_expression):
         self._inner = inner_expression
 
@@ -222,7 +222,7 @@ class Ignore(Expression):
         return 0
 
     def __repr__(self):
-        return "{0}.ignore()".format(repr(self._inner))
+        return "{0}.unchecked()".format(repr(self._inner))
 
 
 class IORedirectExpression(Expression):
