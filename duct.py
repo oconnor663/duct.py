@@ -94,10 +94,10 @@ class Expression(object):
     # Implemented by subclasses.
 
     def _exec(self, context):
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def __repr__(self):
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 Result = namedtuple('Result', ['status', 'stdout', 'stderr'])
@@ -242,7 +242,7 @@ class IORedirectExpression(Expression):
     # Implemented by subclasses.
 
     def _update_context(self, context):
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 class Input(IORedirectExpression):
@@ -382,10 +382,6 @@ def starter_iocontext(stdout_capture, stderr_capture):
     )
 
 
-# TODO: Delete a lot of this stuff below.
-
-
-# Yields a read pipe.
 @contextmanager
 def child_stdin_pipe(stdin_arg):
     if is_pipe_already(stdin_arg):
@@ -401,7 +397,6 @@ def child_stdin_pipe(stdin_arg):
             "Not a valid stdin parameter: " + ioarg_repr(stdin_arg))
 
 
-# Yields both a write pipe and an optional output reader thread.
 @contextmanager
 def child_output_pipe(stdout_pipe, stderr_pipe, capture_pipe, output_arg):
     if is_pipe_already(output_arg):
