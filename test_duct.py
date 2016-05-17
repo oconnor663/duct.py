@@ -295,13 +295,13 @@ def test_ThreadWithReturn_reraises_exceptions():
 
 def test_invalid_io_args():
     with raises(TypeError):
-        cmd('foo', input=1.0).run()
+        cmd('foo').input(1.0).run()
     with raises(TypeError):
-        cmd('foo', stdin=1.0).run()
+        cmd('foo').stdin(1.0).run()
     with raises(TypeError):
-        cmd('foo', stdout=1.0).run()
+        cmd('foo').stdout(1.0).run()
     with raises(TypeError):
-        cmd('foo', stderr=1.0).run()
+        cmd('foo').stderr(1.0).run()
 
 
 def test_write_error_in_input_thread():
