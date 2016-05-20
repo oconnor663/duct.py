@@ -44,8 +44,8 @@ so we can build the whole command piece-by-piece:
 ```python
 from duct import cmd, sh, STDOUT, STDERR
 
-echoes = cmd('echo', 'error', stdout=STDERR).then('echo', 'output')
-pipeline = echoes.subshell(stderr=STDOUT).pipe(sh('grep stuff'))
+echoes = cmd('echo', 'error').stdout(STDERR).then('echo', 'output')
+pipeline = echoes.stderr(STDOUT).pipe(sh('grep stuff'))
 output = pipeline.read()  # This raises an exception! See below.
 ```
 
@@ -54,18 +54,23 @@ output = pipeline.read()  # This raises an exception! See below.
 
 Because `grep` in the example above doesn't match any lines, it's going
 to return an error code, and duct will raise an exception. To prevent
-the exception, use `check=False`. If you pass that to `run`, the
-expression's exit status will be the `status` attribute on the result,
-just like `subprocess.run` in Python 3.5. If you pass it to part of an
-expression, like `cmd`, it will force just that part to return `0`,
-though other parts could still return errors.
+the exception, you can use `unchecked()`:
 
 ```python
-result = cmd('false').run(check=False)
-print(result.status)  # 1
-
-result = cmd('false', check=False).run()
+result = cmd('false').unchecked().run()
 print(result.status)  # 0
+```
+
+If you need to the value of a non-zero exit status, you can catch the
+exception it raises and inspect it like this.
+
+```python
+from duct import cmd, StatusError
+
+try:
+    cmd('false').run()
+except StatusError as e:
+    print(e.result.status)  # 1
 ```
 
 Note that duct treats errors in a pipe like bash's `pipefail` option:
@@ -75,12 +80,12 @@ returns an error because its stdout is closed:
 
 ```python
 # Raises an exception, because cat returns an error.
-cmd('cat', stdin='/dev/urandom').pipe('true').read()
+cmd('cat').stdin('/dev/urandom').pipe('true').read()
 ```
 
 
 ## Work with pathlib.
-If you have `Path` objects, you can use them anywhere you would use a
+If you have a `Path` objects, you can use it anywhere you would use a
 string.
 
 ```python
@@ -89,7 +94,7 @@ from pathlib import Path
 
 myscript = Path('foo')
 mydir = Path('bar')
-cmd(myscript).run(cwd=mydir)
+cmd(myscript).cwd(mydir).run()
 ```
 
 
