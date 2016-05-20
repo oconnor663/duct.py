@@ -250,10 +250,12 @@ class Input(IORedirectExpression):
         super(Input, self).__init__(inner, "input", [arg])
         # If the argument is a string, convert it to bytes.
         # TODO: Might be cheaper to open the pipe in text mode.
-        if isinstance(arg, str):
+        if is_unicode(arg):
             self._buf = encode_with_universal_newlines(arg)
-        else:
+        elif is_bytes(arg):
             self._buf = arg
+        else:
+            raise TypeError("Not a valid input parameter: " + ioarg_repr(arg))
 
     @contextmanager
     def _update_context(self, context):
@@ -389,7 +391,7 @@ def child_stdin_pipe(stdin_arg):
     elif stdin_arg == DEVNULL:
         with open_devnull('r') as read:
             yield read
-    elif is_path(stdin_arg):
+    elif could_be_path(stdin_arg):
         with open_path(stdin_arg, 'r') as read:
             yield read
     else:
@@ -410,7 +412,7 @@ def child_output_pipe(stdout_pipe, stderr_pipe, capture_pipe, output_arg):
         yield stderr_pipe
     elif output_arg == CAPTURE:
         yield capture_pipe
-    elif is_path(output_arg):
+    elif could_be_path(output_arg):
         with open_path(output_arg, 'w') as write:
             yield write
     else:
@@ -438,9 +440,18 @@ def open_devnull(mode):
         yield f
 
 
-def is_path(iovalue):
-    # TODO: What about bytearray etc.?
-    return isinstance(iovalue, (str, bytes, PurePath))
+def is_bytes(val):
+    # Note that bytes is the same as str in Python 2.
+    return isinstance(val, (bytes, bytearray))
+
+
+def is_unicode(val):
+    unicode_type = type(u"")
+    return isinstance(val, unicode_type)
+
+
+def could_be_path(val):
+    return is_bytes(val) or is_unicode(val) or isinstance(val, PurePath)
 
 
 @contextmanager
