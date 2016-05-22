@@ -63,35 +63,6 @@ def replace(a, b):
     return cmd('python', '-c', code)
 
 
-# setup and teardown functions for the entire module
-# --------------------------------------------------
-
-def get_open_fds():
-    '''Use the /proc filesystem to get the list of open file descriptors. On
-    non-Linux systems, this returns an empty list.'''
-    fds_path = "/proc/{0}/fd".format(os.getpid())
-    if os.path.isdir(fds_path):
-        return sorted(os.listdir(fds_path))
-    else:
-        return []
-
-
-def setup():
-    '''Record the open file descriptors. This should be the same at the end of
-    the test, if we didn't leak anything.'''
-    global before_fds
-    before_fds = get_open_fds()
-
-
-def teardown():
-    '''Assert that the open file descriptors at the end of the test are the
-    same as they were at the start.'''
-    after_fds = get_open_fds()
-    assert before_fds == after_fds, \
-        "We leaked a file descriptor! before {0}, after {1}".format(
-            before_fds, after_fds)
-
-
 # utilities
 # ---------
 
