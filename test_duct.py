@@ -51,7 +51,7 @@ def echo_x():
     code = textwrap.dedent('''\
         import os
         print(os.environ.get("x", ""))
-        '''.format(c))
+        ''')
     return cmd('python', '-c', code)
 
 
