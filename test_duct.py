@@ -2,14 +2,13 @@
 
 import binascii
 import os
-import sys
 import tempfile
 import textwrap
 
 from pytest import raises, mark
 
 import duct
-from duct import cmd, sh, DEVNULL, STDOUT, STDERR, PIPE
+from duct import cmd, sh, DEVNULL, STDOUT, STDERR, CAPTURE, StatusError
 
 try:
     from pathlib import Path
@@ -17,68 +16,80 @@ try:
 except ImportError:
     has_pathlib = False
 
+NEWLINE = os.linesep.encode()
+
 
 # Windows-compatible commands to mimic Unix
 # -----------------------------------------
 
-def exit_cmd(n, **kwargs):
-    return cmd('python', '-c', 'import sys; sys.exit({0})'.format(n), **kwargs)
+def exit_cmd(n):
+    return cmd('python', '-c', 'import sys; sys.exit({0})'.format(n))
 
 
-def true(**kwargs):
-    return exit_cmd(0, **kwargs)
+def true():
+    return exit_cmd(0)
 
 
-def false(**kwargs):
-    return exit_cmd(1, **kwargs)
+def false():
+    return exit_cmd(1)
 
 
-def head(c, **kwargs):
+def head(c):
     code = textwrap.dedent('''\
         import sys
         input_str = sys.stdin.read({0})
         sys.stdout.write(input_str)
         '''.format(c))
-    return cmd('python', '-c', code, **kwargs)
+    return cmd('python', '-c', code)
 
 
-def pwd(**kwargs):
-    return cmd('python', '-c', 'import os; print(os.getcwd())', **kwargs)
+def pwd():
+    return cmd('python', '-c', 'import os; print(os.getcwd())')
 
 
-def echo_x(**kwargs):
+def echo_x():
     if os.name == 'nt':
-        return sh('echo %x%', **kwargs)
+        return sh('echo %x%')
     else:
-        return sh('echo $x', **kwargs)
+        return sh('echo $x')
 
 
-def replace(a, b, **kwargs):
+def replace(a, b):
     code = textwrap.dedent('''\
         import sys
         input_str = sys.stdin.read()
         sys.stdout.write(input_str.replace({0}, {1}))
         '''.format(repr(a), repr(b)))
-    return cmd('python', '-c', code, **kwargs)
+    return cmd('python', '-c', code)
 
 
 # setup and teardown functions for the entire module
 # --------------------------------------------------
 
+def get_open_fds():
+    '''Use the /proc filesystem to get the list of open file descriptors. On
+    non-Linux systems, this returns an empty list.'''
+    fds_path = "/proc/{0}/fd".format(os.getpid())
+    if os.path.isdir(fds_path):
+        return sorted(os.listdir(fds_path))
+    else:
+        return []
+
+
 def setup():
-    '''Record the next available file descriptor. When each test finishes,
-    check that the next available file descriptor is the same. That means we
-    didn't leak any fd's.'''
-    global next_fd
-    with open(os.devnull) as f:
-        next_fd = f.fileno()
+    '''Record the open file descriptors. This should be the same at the end of
+    the test, if we didn't leak anything.'''
+    global before_fds
+    before_fds = get_open_fds()
 
 
 def teardown():
-    # TODO: This could miss a leaked fd with a higher number. Find another way.
-    with open(os.devnull) as f:
-        new_fd = f.fileno()
-    assert next_fd == new_fd, "We leaked a file descriptor!"
+    '''Assert that the open file descriptors at the end of the test are the
+    same as they were at the start.'''
+    after_fds = get_open_fds()
+    assert before_fds == after_fds, \
+        "We leaked a file descriptor! before {0}, after {1}".format(
+            before_fds, after_fds)
 
 
 # utilities
@@ -99,28 +110,31 @@ def test_hello_world():
 
 
 def test_result():
-    result = sh('echo more stuff').run(stdout=PIPE, decode=True)
-    assert "more stuff\n" == result.stdout
+    result = sh('echo more stuff').stdout(CAPTURE).run()
+    assert b"more stuff" + NEWLINE == result.stdout
+    assert b"" == result.stderr
+    assert 0 == result.status
 
 
 def test_bytes():
-    out = head(10).read(input=b'\x00'*100, decode=False)
-    assert b'\x00'*10 == out
+    out = head(10).input(b'\x00'*100).read()
+    assert '\x00'*10 == out
 
 
 def test_nonzero_status_throws():
-    with raises(duct.CheckedError):
+    with raises(duct.StatusError):
         false().run()
 
 
-def test_check():
-    # Test both the top level and command level check params.
-    assert 1 == false().run(check=False).returncode
-    assert 0 == false(check=False).run().returncode
+def test_unchecked():
+    assert 0 == false().unchecked().run().status
+    with raises(StatusError) as e:
+        false().run()
+    assert e.value.result.status
 
 
 def test_pipe():
-    out = head(3).pipe(replace('x', 'a')).read(input="xxxxxxxxxx")
+    out = head(3).pipe(replace('x', 'a')).input("xxxxxxxxxx").read()
     assert "aaa" == out
 
 
@@ -143,7 +157,7 @@ def test_pipe_SIGPIPE():
 def test_then():
     print_a = cmd('python', '-c', 'print("A")')
     assert 'A' == true().then(print_a).read()
-    assert '' == false().then(print_a).read(check=False)
+    assert '' == false().then(print_a).unchecked().read()
 
 
 def test_nesting():
@@ -159,49 +173,27 @@ def test_cwd():
     # because on OSX there's a symlink in there.
     tmpdir = os.path.realpath(tempfile.mkdtemp())
     another = os.path.realpath(tempfile.mkdtemp())
-    assert tmpdir == pwd().read(cwd=tmpdir)
-    assert tmpdir == pwd(cwd=tmpdir).read(cwd=another)
+    assert tmpdir == pwd().cwd(tmpdir).read()
+    assert tmpdir == pwd().cwd(tmpdir).cwd(another).read()
     if has_pathlib:
-        assert tmpdir == pwd().read(cwd=Path(tmpdir))
-        assert (tmpdir == pwd(cwd=Path(tmpdir))
-                .read(cwd='/something/else'))
+        assert tmpdir == pwd().cwd(Path(tmpdir)).read()
 
 
 def test_env():
     # Test env at both the top level and the command level, and that values can
     # be pathlib Paths.
-    assert "foo" == echo_x().read(env={'x': 'foo'})
-    assert "foo" == echo_x(env={'x': 'foo'}).read()
+    assert "foo" == echo_x().env('x', 'foo').read()
     if has_pathlib:
-        assert "foo" == echo_x().read(env={'x': Path('foo')})
-        assert "foo" == echo_x(env={'x': Path('foo')}).read()
-
-
-def test_full_env():
-    out = "%x%" if os.name is 'nt' else ""
-    assert out == echo_x(full_env={}).read(env={'x': 'X'})
-
-
-def test_env_with_full_env_throws():
-    # This should throw even before the command is run.
-    with raises(ValueError):
-        cmd("foo", env={}, full_env={})
-
-
-def test_input_with_stdin_throws():
-    # This should throw even before the command is run.
-    with raises(ValueError):
-        cmd("foo", input="foo", stdin="foo")
-
-
-def test_undefined_keyword_throws():
-    # This should throw even before the command is run.
-    with raises(TypeError):
-        cmd("foo", junk_keyword=True)
+        assert "foo" == echo_x().env('x', Path('foo')).read()
+    # Test env_remove and env_clear.
+    assert "" == echo_x().env_remove('x').env('x', 'foo').read()
+    assert "" == echo_x().env_clear().env('x', 'foo').read()
+    # Check that env_remove is ok with the variable being undefined.
+    assert "" == echo_x().env_remove('x').env_clear().read()
 
 
 def test_input():
-    out = replace('o', 'a').read(input="foo")
+    out = replace('o', 'a').input("foo").read()
     assert 'faa' == out
 
 
@@ -210,56 +202,56 @@ def test_stdin():
     with open(temp, 'w') as f:
         f.write('foo')
     # with a file path
-    out = replace('o', 'a').read(stdin=temp)
+    out = replace('o', 'a').stdin(temp).read()
     assert 'faa' == out
     # with a Path path
     if has_pathlib:
-        out = replace('o', 'b').read(stdin=Path(temp))
+        out = replace('o', 'b').stdin(Path(temp)).read()
         assert 'fbb' == out
     # with an open file
     with open(temp) as f:
-        out = replace('o', 'c').read(stdin=f)
+        out = replace('o', 'c').stdin(f).read()
         assert 'fcc' == out
     # with explicit DEVNULL
-    out = replace('o', 'd').read(stdin=DEVNULL)
+    out = replace('o', 'd').stdin(DEVNULL).read()
     assert '' == out
 
 
 def test_stdout():
     # with a file path
     temp = mktemp()
-    sh('echo hi').run(stdout=temp)
+    sh('echo hi').stdout(temp).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with a Path path
     if has_pathlib:
         temp = mktemp()
-        sh('echo hi').run(stdout=Path(temp))
+        sh('echo hi').stdout(Path(temp)).run()
         with open(temp) as f:
             assert 'hi\n' == f.read()
     # with an open file
     temp = mktemp()
-    sh('echo hi').run(stdout=temp)
+    with open(temp, 'w') as f:
+        sh('echo hi').stdout(f).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with explicit DEVNULL
-    out = sh('echo hi', stdout=DEVNULL).read()
+    out = sh('echo hi').stdout(DEVNULL).read()
     assert '' == out
     # to STDERR
-    result = sh('echo hi', stdout=STDERR).run(stdout=PIPE, stderr=PIPE,
-                                              decode=True)
-    assert '' == result.stdout
-    assert 'hi\n' == result.stderr
+    result = sh('echo hi').stdout(STDERR).stdout(CAPTURE).stderr(CAPTURE).run()
+    assert b'' == result.stdout
+    assert b'hi' + NEWLINE == result.stderr
     # from stderr with STDOUT (note Windows would output any space before >)
-    result = sh('echo hi>&2', stderr=STDOUT).run(stdout=PIPE, stderr=PIPE,
-                                                 decode=True)
-    assert 'hi\n' == result.stdout
-    assert '' == result.stderr
-    # full swap
-    result = (sh('echo hi&& echo lo>&2', stdout=STDERR, stderr=STDOUT)
-              .run(stdout=PIPE, stderr=PIPE, decode=True))
-    assert 'lo\n' == result.stdout
-    assert 'hi\n' == result.stderr
+    result = (sh('echo hi>&2').stderr(STDOUT).stdout(CAPTURE).stderr(CAPTURE)
+              .run())
+    assert b'hi' + NEWLINE == result.stdout
+    assert b'' == result.stderr
+    # Swapping both ends up with them joined (for better or worse).
+    result = (sh('echo hi&& echo lo>&2').stdout(STDERR).stderr(STDOUT)
+              .stdout(CAPTURE).stderr(CAPTURE).run())
+    assert b'hi' + NEWLINE + b'lo' + NEWLINE == result.stdout
+    assert b'' == result.stderr
 
 
 @mark.skipif(not has_pathlib, reason='pathlib not installed')
@@ -275,27 +267,30 @@ def test_commands_can_be_paths():
         f.write('echo some stuff\n')
     path.chmod(0o755)
     assert 'some stuff' == cmd(path).read()
-    assert 'some stuff\n' == sh(path).read(sh_trim=False)
-
-
-def test_subshell():
-    # Note, don't put a space before the redirect, because Windows will keep
-    # that in the output.
-    c = sh("echo foo>&2").then(false())
-    out = c.subshell(check=False, stderr=STDOUT).read()
-    assert "foo" == out
+    assert 'some stuff' == sh(path).read()
 
 
 def test_pipe_returns_rightmost_error():
-    assert 1 == true().pipe(false()).run(check=False).returncode
-    assert 1 == false().pipe(false()).run(check=False).returncode
-    assert (3 == false().pipe(exit_cmd(3)).run(check=False).returncode)
+    # Failure on the right.
+    with raises(StatusError) as e:
+        true().pipe(false()).run()
+    assert 1 == e.value.result.status
+
+    # Failure on the left.
+    with raises(StatusError) as e:
+        false().pipe(true()).run()
+    assert 1 == e.value.result.status
+
+    # Both sides are failures. The right error code takes precedence.
+    with raises(StatusError) as e:
+        false().pipe(exit_cmd(3)).run()
+    assert 3 == e.value.result.status
 
 
 def test_checked_error_contains_status():
     try:
         exit_cmd(123).run()
-    except duct.CheckedError as e:
+    except duct.StatusError as e:
         assert '123' in str(e)
 
 
@@ -308,29 +303,15 @@ def test_ThreadWithReturn_reraises_exceptions():
         thread.join()
 
 
-def test_getting_reader_output_before_join_throws():
-    default_context = duct.IOContext()
-    ioargs = duct.parse_cmd_kwargs(stdout=PIPE, stderr=PIPE)
-    with default_context.child_context(ioargs) as iocontext:
-        with raises(RuntimeError):
-            iocontext.stdout_result()
-        with raises(RuntimeError):
-            iocontext.stderr_result()
-    # Exiting the with-block joins the reader threads, so the output accessors
-    # should no longer throw.
-    assert b'' == iocontext.stdout_result()
-    assert b'' == iocontext.stderr_result()
-
-
 def test_invalid_io_args():
     with raises(TypeError):
-        cmd('foo', input=1.0).run()
+        cmd('foo').input(1.0).run()
     with raises(TypeError):
-        cmd('foo', stdin=1.0).run()
+        cmd('foo').stdin(1.0).run()
     with raises(TypeError):
-        cmd('foo', stdout=1.0).run()
+        cmd('foo').stdout(1.0).run()
     with raises(TypeError):
-        cmd('foo', stderr=1.0).run()
+        cmd('foo').stderr(1.0).run()
 
 
 def test_write_error_in_input_thread():
@@ -339,7 +320,7 @@ def test_write_error_in_input_thread():
     the pipe, and then that write will fail. Test that we catch this
     BrokenPipeError.'''
     test_input = '\x00' * 100 * 1000
-    true().run(input=test_input)
+    true().input(test_input).run()
 
 
 def test_string_mode_returns_unicode():
@@ -347,15 +328,6 @@ def test_string_mode_returns_unicode():
     instead of a unicode string. Make sure we convert.'''
     out = sh('echo hi').read()
     assert isinstance(out, type(u''))
-
-
-def test_bytes_dont_trim():
-    out = sh("echo hi").read(stdout=PIPE, decode=False)
-    if os.name == 'nt':
-        expected = b"hi\r\n"
-    else:
-        expected = b"hi\n"
-    assert out == expected
 
 
 def test_repr_round_trip():
@@ -366,14 +338,13 @@ def test_repr_round_trip():
     literals, because Python 2 won't emit them.'''
 
     expressions = [
-        "cmd('foo', check=False, env={'x': 'y'})",
-        "sh('bar', check=False, input='stuff')",
-        "cmd('foo').subshell(check=False, full_env={})",
+        "cmd('foo').unchecked().env('a', 'b').env_remove('c').env_clear()",
+        "sh('bar').stdin(DEVNULL).input('')",
         "cmd('foo').pipe(cmd('bar'))",
         "cmd('foo').pipe(sh('bar'))",
         "cmd('foo').then(cmd('bar'))",
         "cmd('foo').then(sh('bar'))",
-        "cmd('foo', input=DEVNULL, stderr=STDOUT, stdout=PIPE)",
+        "cmd('foo').stdout(STDERR).stderr(STDOUT)",
     ]
     for expression in expressions:
         assert repr(eval(expression)) == expression
@@ -381,9 +352,9 @@ def test_repr_round_trip():
 
 def test_swap_and_redirect_at_same_time():
     '''We need to make sure that setting e.g. stderr=STDOUT while also setting
-    stdout=PIPE means that stderr joins the redirected stdout, rather than
+    stdout=CAPTURE means that stderr joins the redirected stdout, rather than
     joining what stdout used to be.'''
-    err_out = sh('echo hi>&2').read(stderr=STDOUT)
+    err_out = sh('echo hi>&2').stderr(STDOUT).read()
     assert err_out == 'hi'
 
 
@@ -431,35 +402,5 @@ def test_local_path_doesnt_match_PATH():
     assert not echo_path.exists(), 'This path is supposed to be nonexistent.'
     with raises(PROGRAM_NOT_FOUND_ERROR):
         cmd(echo_path).run()
-    with raises(duct.CheckedError):
+    with raises(duct.StatusError):
         sh(echo_path).run()
-
-
-def test_swap_at_top_level():
-    '''We need to make sure that STDOUT and STDERR work even when pipes are
-    being inherited from the parent process instead of redirected. Previously
-    we represented "inherit" as None, which broke this case. We can't test this
-    by capturing output in the usual way; we need to wrap to a subprocess that
-    uses duct without capturing.'''
-
-    # Note that Python 2.6 really screws with us here. See
-    # http://stackoverflow.com/q/36311719/823869. If I set stdout=sys.stderr in
-    # a regular subprocess call, that does redirect stdout, but it *closes*
-    # stderr in the child. As a result, we can only test the pipes one at a
-    # time. Wacky fun! Also, as usual, we need to stay compatible with cmd.exe
-    # here.
-    child = textwrap.dedent('''
-        from duct import sh, STDOUT, STDERR
-        sh('echo foo').run(stdout=STDERR)
-        sh('echo bar>&2').run(stderr=STDOUT)
-        ''')
-    temp = mktemp()
-    with open(temp, 'w') as f:
-        f.write(child)
-    # Set the PYTHONPATH so that the child script can find duct.
-    env = {'PYTHONPATH': os.getcwd()}
-    result = cmd(sys.executable, temp).run(
-        env=env, decode=True, stdout=PIPE, stderr=PIPE)
-    # Assert that the outputs are swapped.
-    assert result.stdout == "bar\n"
-    assert result.stderr == "foo\n"

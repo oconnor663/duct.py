@@ -44,8 +44,8 @@ so we can build the whole command piece-by-piece:
 ```python
 from duct import cmd, sh, STDOUT, STDERR
 
-echoes = cmd('echo', 'error', stdout=STDERR).then('echo', 'output')
-pipeline = echoes.subshell(stderr=STDOUT).pipe(sh('grep stuff'))
+echoes = cmd('echo', 'error').stdout(STDERR).then('echo', 'output')
+pipeline = echoes.stderr(STDOUT).pipe(sh('grep stuff'))
 output = pipeline.read()  # This raises an exception! See below.
 ```
 
@@ -53,19 +53,24 @@ output = pipeline.read()  # This raises an exception! See below.
 ## Errors should never pass silently.
 
 Because `grep` in the example above doesn't match any lines, it's going
-to return an error code, and duct will raise an exception. To prevent
-the exception, use `check=False`. If you pass that to `run`, the
-expression's exit status will be the `returncode` attribute on the
-result, just like `subprocess.run` in Python 3.5. If you pass it to part
-of an expression, like `cmd`, it will force just that part to return
-`0`, though other parts could still return errors.
+to return an error code, and duct will raise an exception. To ignore the
+error, you can use `unchecked`:
 
 ```python
-result = cmd('false').run(check=False)
-print(result.returncode)  # 1
+result = cmd('false').unchecked().run()
+print(result.status)  # 0
+```
 
-result = cmd('false', check=False).run()
-print(result.returncode)  # 0
+If you need to know the value of a non-zero exit status, you can catch
+the exception it raises and inspect it like this.
+
+```python
+from duct import cmd, StatusError
+
+try:
+    cmd('false').run()
+except StatusError as e:
+    print(e.result.status)  # 1
 ```
 
 Note that duct treats errors in a pipe like bash's `pipefail` option:
@@ -75,12 +80,12 @@ returns an error because its stdout is closed:
 
 ```python
 # Raises an exception, because cat returns an error.
-cmd('cat', stdin='/dev/urandom').pipe('true').read()
+cmd('cat').stdin('/dev/urandom').pipe(cmd('true')).read()
 ```
 
 
 ## Work with pathlib.
-If you have `Path` objects, you can use them anywhere you would use a
+If you have a `Path` objects, you can use it anywhere you would use a
 string.
 
 ```python
@@ -89,142 +94,112 @@ from pathlib import Path
 
 myscript = Path('foo')
 mydir = Path('bar')
-cmd(myscript).run(cwd=mydir)
+cmd(myscript).cwd(mydir).run()
 ```
 
 
 ## Reference
 
-Every duct function takes the same keyword arguments, [see
-below](#keyword-arguments).
+### Expression starting functions
 
-### Top level functions
-
-<strong><tt>cmd</tt></strong>(<em>program, \*program_args, \*\*kwargs</em>)
+#### `cmd`
 
 Create a command expression from a program name and optional arguments.
 This doesn't require escaping any special characters or whitespace. If
 your arguments are anything other than constant strings, this is
 definitely what you want to use.
 
-<strong><tt>sh</tt></strong>(<em>shell_command, \*\*kwargs</em>)
+#### `sh`
 
 Create a command expression from a string of shell code, executed with
 the `shell=True` flag in the `subprocess` module. This can spare you
 from typing a lot of quote characters, or even whole pipelines, but
-please don't use it with anything other than a constant command string,
-because shell escaping is tricky.
+please don't use it with anything other than a constant string, because
+shell escaping is tricky.
 
-### Expression methods
+### Execution methods
 
-<strong><tt>run</tt></strong>(<em>\*\*kwargs</em>)
+#### `run`
 
 Execute the expression and return a `Result` object, which has fields
-`stdout`, `stderr`, and `returncode`. By default, the child process
-shares the stdin/stdout/stderr pipes of the parent, and no output is
-captured. If the expression has a non-zero returncode, `run` will raise
-an exception. Use `check=False` to allow non-zero returncodes.
-
-<strong><tt>read</tt></strong>(<em>\*\*kwargs</em>)
-
-Execute the expression and capture its output, similar to backticks or
-`$()` in bash. This is a wrapper around `run`, which sets `stdout=PIPE`,
-`decode=True`, and `sh_trim=True` and returns the `stdout` field of the
-result.
-
-<strong><tt>pipe</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
-
-Create a pipe expression, similar to `|` in bash. The the right is any
-duct expression. The returncode of a pipe expression is equal to the
-right side's returncode if it's nonzero, otherwise the left side's.
-
-<strong><tt>then</tt></strong>(<em>\*command_or_expression, \*\*kwargs</em>)
-
-Create a sequence expression, similar to `&&` in bash, with syntax like
-`pipe` above. The left side runs, and then if its returncode is zero,
-the right side runs. If you want to ignore errors on the left side,
-similar to `;` in bash, use `check=False` inside the left expression.
-
-<strong><tt>subshell</tt></strong>(<em>\*\*kwargs</em>)
-
-Apply redirections or other keywords to an already-formed expression,
-similar to `()` in bash. You don't usually need this; instead you can
-pass these arguments to `run` or to individual commands. `subshell` is
-useful when you're composing expressions that were created in some other
-part of your program, or when you're translating absurd bash pipelines.
-
-### Keyword arguments
-
-Except where noted, all of these are valid as arguments both to the
-`run` and `read` methods (the "run level"), and to individual commands
-(the "expression level"). Arguments given at the expression level will
-generally override arguments given to containing expressions or at the
-run level.
-
-<strong><tt>input</tt></strong>
-
-A string or bytes object to write directly to standard input.
-
-<strong><tt>stdin</tt></strong>
-
-A file to use in place of the default standard input. It can be a
-string/bytes/pathlib filepath to open, an already open file or
-descriptor, or `DEVNULL`. Setting this and `input` at the same time is
-an error.
-
-<strong><tt>stdout</tt></strong>
-
-A file to use in place of the default standard output. It can be a
-string/bytes/pathlib filepath to open, an already open file or
-descriptor, or `DEVNULL`. Also accepts `STDERR` to join with the stderr
-pipe. (Setting `stdout=STDOUT` is a no-op. Setting `stdout=STDERR` and
-`stderr=STDOUT` at the same time swaps them.) Also accepts `PIPE`, which
-causes output to be captured and stored as the `stdout` field of the
-`Result` object returned by `run`. `PIPE` only work at the run level.
-
-<strong><tt>stderr</tt></strong>
-
-Similar to `stdout`. Output captured with `PIPE` is stored as the
-`stderr` field of the `Result` object returned by `run`.
-
-<strong><tt>cwd</tt></strong>
-
-The working directory of the child process. The default is the working
-directory of the parent.
-
-<strong><tt>env</tt></strong>
-
-A map of environment variables set for the child process. Note that this
-is *in addition* to what's in `os.environ`, unlike the "env" parameter
-from the `subprocess` module. Using `env` at both the run level and the
-expression level is cumulative. If you set the same variable in both
-places, the expression level wins.
-
-<strong><tt>full_env</tt></strong>
-
-The complete map of environment variables for the child process, which
-will not be merged with `os.environ`. This is what the `subprocess`
-module calls "env". Setting `full_env` at the expression level wipes out
-any other variables set with `env` or `full_env` at the run level.
-
-<strong><tt>check</tt></strong>
-
-Defaults to `True`. If `False` at the expression level, that expression
-always returns exit status `0`. If `False` at the run level, `run` will
-return results with a nonzero `returncode`, instead of raising an
+`stdout`, `stderr`, and `status`. By default, the child process shares
+the stdin/stdout/stderr pipes of the parent, and no output is captured.
+If the expression has a non-zero exit status, `run` will raise an
 exception.
 
-<strong><tt>decode</tt></strong>
+#### `read`
 
-Defaults to `False` in `run` and `True` in `read`. If `True`, captured
-output bytes get decoded to Unicode strings in the `Result` object, and
-platform specific newlines in those strings get translated into `\n`
-("universal newlines" mode).
+Execute the expression and capture its output, similar to backticks or
+`$()` in bash. This is a convenience wrapper around `run` which sets
+`stdout(CAPTURE)`, decodes stdout to a string, trims trailing newlines,
+and returns it directly instead of returning a `Result`.
 
-<strong><tt>sh_trim</tt></strong>
+### Pipe building methods
 
-Defaults to `False` in `run` and `True` in `read`. If `True`, trailing
-newlines get stripped from any output captured with `PIPE` and
-`decode=True`. This is the same behavior as backticks or `$()` in bash.
-Output captured without `decode` is never trimmed. Only valid at the run
-level.
+#### `pipe`
+
+Create a pipe expression, similar to `|` in bash. The the argument is
+the right side of the pipe, which can be any duct expression. The status
+of a pipe expression is equal to the right side's status if it's
+nonzero, otherwise the left side's.
+
+#### `then`
+
+Create a sequence expression, similar to `&&` in bash, and used like
+`pipe` above. The left side runs, and then if its status is zero, the
+right side runs. If you want to ignore errors on the left side, similar
+to `;` in bash, use `unchecked` around the left expression.
+
+### Redirections etc.
+
+#### `input`
+
+Redirects an expression's stdin to read from a string or bytes object.
+Duct will spawn a writer thread at runtime.
+
+#### `stdin`
+
+Redirects an expression's stdin to read from a file. The file can be a
+string/bytes/pathlib filepath to open at runtime, an already open file
+or descriptor, or `DEVNULL`.
+
+#### `stdout`
+
+Redirects an expression's stdout to write to a file, similar to `stdin`
+above. In addition to paths, files, and `DEVNULL`, you can pass `STDERR`
+to join stdout with the stderr stream. You can also pass `CAPTURE`, in
+which case duct will spawn a reader thread at runtime and capture stdout
+bytes as `Result.stdout`.
+
+#### `stderr`
+
+Similar to `stdout`. You can pass `STDOUT` to join stderr with the
+stdout stream. Output captured with `CAPTURE` is returned as
+`Result.stderr`.
+
+#### `cwd`
+
+Sets the working directory an expression will execute with. The default
+is the working directory of the parent.
+
+#### `env`
+
+Sets an environment variable for an expression, given a name and a
+value.
+
+#### `env_remove`
+
+Unsets an environment variable for an expression, given a name. If the
+variable wasn't defined, this is a no op.
+
+#### `env_clear`
+
+Clears the entire environment for an expression. By default child
+processes inherit the environment of the parent. Note that environment
+variables like `SystemRoot` are sometimes required on Windows, and it's
+the caller's responsibility to reestablish these variables as needed.
+
+#### `unchecked`
+
+Forces an expression to return `0` as its exit status. This can be used
+on the left side of `then`, to make sure the right side always executes.
