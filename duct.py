@@ -350,8 +350,8 @@ class EnvClear(IORedirectExpression):
         # Pretend the IOContext is totally immutable. Copy its environment
         # dictionary instead of modifying it in place.
         new_env = {}
-        if os.name == "nt" and "SystemRoot" in context.env:
-            new_env["SystemRoot"] = context.env["SystemRoot"]
+        if os.name == "nt" and "SYSTEMROOT" in context.env:
+            new_env["SYSTEMROOT"] = context.env["SYSTEMROOT"]
         yield context._replace(env=new_env)
 
 
