@@ -48,10 +48,11 @@ def pwd():
 
 
 def echo_x():
-    if os.name == 'nt':
-        return sh('echo %x%')
-    else:
-        return sh('echo $x')
+    code = textwrap.dedent('''\
+        import os
+        print(os.environ.get("x", ""))
+        '''.format(c))
+    return cmd('python', '-c', code)
 
 
 def replace(a, b):
