@@ -194,10 +194,10 @@ variable wasn't defined, this is a no op.
 
 #### `env_clear`
 
-Clears the entire environment for an expression. By default child
-processes inherit the environment of the parent. Note that environment
-variables like `SystemRoot` are sometimes required on Windows, and it's
-the caller's responsibility to reestablish these variables as needed.
+Clears the entire parent environment, including `env` values. Note that
+environment variables like `SYSTEMROOT` on Windows might be required by
+child processes, and it's the caller's responsibility to re-`env` these
+variables as needed.
 
 #### `unchecked`
 

@@ -34,7 +34,7 @@ def false():
     return exit_cmd(1)
 
 
-def head(c):
+def head_bytes(c):
     code = textwrap.dedent('''\
         import sys
         input_str = sys.stdin.read({0})
@@ -48,10 +48,11 @@ def pwd():
 
 
 def echo_x():
-    if os.name == 'nt':
-        return sh('echo %x%')
-    else:
-        return sh('echo $x')
+    code = textwrap.dedent('''\
+        import os
+        print(os.environ.get("x", ""))
+        ''')
+    return cmd('python', '-c', code)
 
 
 def replace(a, b):
@@ -88,7 +89,7 @@ def test_result():
 
 
 def test_bytes():
-    out = head(10).input(b'\x00'*100).read()
+    out = head_bytes(10).input(b'\x00'*100).read()
     assert '\x00'*10 == out
 
 
@@ -105,7 +106,7 @@ def test_unchecked():
 
 
 def test_pipe():
-    out = head(3).pipe(replace('x', 'a')).input("xxxxxxxxxx").read()
+    out = head_bytes(3).pipe(replace('x', 'a')).input("xxxxxxxxxx").read()
     assert "aaa" == out
 
 
@@ -121,7 +122,7 @@ def test_pipe_SIGPIPE():
             pass
         ''')
     zeroes = cmd('python', '-c', zeroes_code)
-    out = zeroes.pipe(head(5)).read()
+    out = zeroes.pipe(head_bytes(5)).read()
     assert "00000" == out
 
 
@@ -151,16 +152,26 @@ def test_cwd():
 
 
 def test_env():
-    # Test env at both the top level and the command level, and that values can
-    # be pathlib Paths.
+    # Test env with both strings and Pathlib paths.
     assert "foo" == echo_x().env('x', 'foo').read()
     if has_pathlib:
         assert "foo" == echo_x().env('x', Path('foo')).read()
+
+
+def test_env_remove_and_clear():
+    # Wrap echo to preserve the SYSTEMROOT variable on Windows, since we're
+    # going to be testing env_clear(). Without this, basic Python features like
+    # `import os` will fail.
+    safe_echo = echo_x()
+    if os.name == "nt":
+        safe_echo = safe_echo.env("SYSTEMROOT", os.environ["SYSTEMROOT"])
+
     # Test env_remove and env_clear.
-    assert "" == echo_x().env_remove('x').env('x', 'foo').read()
-    assert "" == echo_x().env_clear().env('x', 'foo').read()
+    assert "" == safe_echo.env_remove('x').env('x', 'foo').read()
+    assert "" == safe_echo.env_clear().env('x', 'foo').read()
+
     # Check that env_remove is ok with the variable being undefined.
-    assert "" == echo_x().env_remove('x').env_clear().read()
+    assert "" == safe_echo.env_remove('x').env_clear().read()
 
 
 def test_input():

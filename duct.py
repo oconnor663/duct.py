@@ -12,10 +12,6 @@ except ImportError:
     class PurePath:
         pass
 
-
-# Public API
-# ==========
-
 # same as in the subprocess module
 STDOUT = -2
 DEVNULL = -3
