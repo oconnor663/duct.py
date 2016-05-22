@@ -349,7 +349,10 @@ class EnvClear(IORedirectExpression):
     def _update_context(self, context):
         # Pretend the IOContext is totally immutable. Copy its environment
         # dictionary instead of modifying it in place.
-        yield context._replace(env={})
+        new_env = {}
+        if os.name == "nt" and "SystemRoot" in env:
+            new_env["SystemRoot"] = context.env["SystemRoot"]
+        yield context._replace(env=new_env)
 
 
 # The IOContext represents the child process environment at any given point in
