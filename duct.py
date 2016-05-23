@@ -12,16 +12,16 @@ except ImportError:
     class PurePath:
         pass
 
-
-# Public API
-# ==========
-
 # same as in the subprocess module
 STDOUT = -2
 DEVNULL = -3
 # not defined in subprocess (value may change)
 STDERR = -4
 CAPTURE = -5
+
+ENV_CLEAR_PRESERVED_VARS_PER_OS = {
+    "nt": {"SYSTEMROOT"},
+}
 
 
 def cmd(prog, *args):
@@ -348,10 +348,15 @@ class EnvClear(IORedirectExpression):
     @contextmanager
     def _update_context(self, context):
         # Pretend the IOContext is totally immutable. Copy its environment
-        # dictionary instead of modifying it in place.
+        # dictionary instead of modifying it in place. Note that depending on
+        # the OS, "really important" env vars are not cleared. (For example,
+        # clearing SYSTEMROOT on Windows tends to break Python in terrible
+        # ways.)
+        preserved_vars = ENV_CLEAR_PRESERVED_VARS_PER_OS.get(os.name, set())
         new_env = {}
-        if os.name == "nt" and "SYSTEMROOT" in context.env:
-            new_env["SYSTEMROOT"] = context.env["SYSTEMROOT"]
+        for var in preserved_vars:
+            if var in context.env:
+                new_env[var] = context.env[var]
         yield context._replace(env=new_env)
 
 
