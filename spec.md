@@ -42,3 +42,8 @@ Implementations should follow [Python's lead
 here](https://docs.python.org/3/library/subprocess.html#popen-constructor). Use
 `/bin/sh` on POSIX systems and whatever's in the `COMSPEC` environment variable
 on Windows.
+
+## Preserved environment variables
+
+The `env_clear` method might want to avoid deleting variables that Break The
+World?
