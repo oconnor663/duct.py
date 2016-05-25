@@ -85,7 +85,7 @@ cmd('cat').stdin('/dev/urandom').pipe(cmd('true')).read()
 
 
 ## Work with pathlib.
-If you have a `Path` objects, you can use it anywhere you would use a
+If you have a `Path` object, you can use it anywhere you would use a
 string.
 
 ```python
