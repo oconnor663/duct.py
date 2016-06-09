@@ -109,6 +109,11 @@ This doesn't require escaping any special characters or whitespace. If
 your arguments are anything other than constant strings, this is
 definitely what you want to use.
 
+```python
+x = "hi"
+cmd("echo", x).run()
+```
+
 #### `sh`
 
 Create a command expression from a string of shell code, executed with
@@ -116,6 +121,10 @@ the `shell=True` flag in the `subprocess` module. This can spare you
 from typing a lot of quote characters, or even whole pipelines, but
 please don't use it with anything other than a constant string, because
 shell escaping is tricky.
+
+```python
+sh("echo hi").run()
+```
 
 ### Execution methods
 
@@ -127,12 +136,24 @@ the stdin/stdout/stderr pipes of the parent, and no output is captured.
 If the expression has a non-zero exit status, `run` will raise an
 exception.
 
+```python
+result = sh("echo foo").stdout(CAPTURE).run()
+assert result.status == 0
+assert result.stdout == b"foo\n"
+assert result.stderr == b""
+```
+
 #### `read`
 
 Execute the expression and capture its output, similar to backticks or
 `$()` in bash. This is a convenience wrapper around `run` which sets
 `stdout(CAPTURE)`, decodes stdout to a string, trims trailing newlines,
 and returns it directly instead of returning a `Result`.
+
+```python
+output = sh("echo foo").read()
+assert output == "foo"
+```
 
 ### Pipe building methods
 
@@ -143,12 +164,21 @@ the right side of the pipe, which can be any duct expression. The status
 of a pipe expression is equal to the right side's status if it's
 nonzero, otherwise the left side's.
 
+```python
+output = sh("echo dog").pipe(sh("sed s/o/a/")).read()
+assert output == "dag"
+```
+
 #### `then`
 
 Create a sequence expression, similar to `&&` in bash, and used like
 `pipe` above. The left side runs, and then if its status is zero, the
 right side runs. If you want to ignore errors on the left side, similar
 to `;` in bash, use `unchecked` around the left expression.
+
+```python
+cmd("false").then(sh("echo this won't happen")).run()  # StatusError
+```
 
 ### Redirections etc.
 
@@ -157,11 +187,20 @@ to `;` in bash, use `unchecked` around the left expression.
 Redirects an expression's stdin to read from a string or bytes object.
 Duct will spawn a writer thread at runtime.
 
+```python
+output = cmd("cat").input("stuff").read()
+assert output == "stuff"
+```
+
 #### `stdin`
 
 Redirects an expression's stdin to read from a file. The file can be a
 string/bytes/pathlib filepath to open at runtime, an already open file
 or descriptor, or `DEVNULL`.
+
+```python
+cmd("cat").stdin("/etc/resolv.conf").run()
+```
 
 #### `stdout`
 
@@ -171,26 +210,62 @@ to join stdout with the stderr stream. You can also pass `CAPTURE`, in
 which case duct will spawn a reader thread at runtime and capture stdout
 bytes as `Result.stdout`.
 
+```python
+from duct import sh
+from pathlib import Path
+
+temp_dir = sh("mktemp -d").read()
+temp_file = Path(temp_dir) / "file.txt"
+sh("echo some stuff").stdout(temp_file).run()
+```
+
 #### `stderr`
 
 Similar to `stdout`. You can pass `STDOUT` to join stderr with the
 stdout stream. Output captured with `CAPTURE` is returned as
 `Result.stderr`.
 
+```python
+from duct import sh, DEVNULL
+
+sh("echo output && echo junk >&2").stderr(DEVNULL).run()
+```
+
 #### `cwd`
 
 Sets the working directory an expression will execute with. The default
 is the working directory of the parent.
+
+```python
+output = cmd("pwd").cwd("/").read()
+assert output == "/"
+```
 
 #### `env`
 
 Sets an environment variable for an expression, given a name and a
 value.
 
+```python
+output = sh("echo 1$FOO").then(sh("echo $FOO")).env("FOO", "bar").read()
+assert output == "bar"
+```
+
 #### `env_remove`
 
 Unsets an environment variable for an expression, given a name. If the
 variable wasn't defined, this is a no op.
+
+```python
+# The order of operations here is significant. The *inner* parts of an
+# expression take priority. So in this case, env_remove() "happens
+# after" env(), and the FOO variable is cleared. This lets you reason
+# about expressions more locally, when they're broken up into smaller
+# pieces.
+
+output = sh("echo $FOO").env_remove("FOO").env("FOO", "bar").read()
+assert output == ""
+```
 
 #### `env_clear`
 
@@ -199,7 +274,23 @@ environment variables like `SYSTEMROOT` on Windows might be required by
 child processes, and it's the caller's responsibility to re-`env` these
 variables as needed.
 
+```python
+output = sh("echo $FOO").env_clear().env("FOO", "bar").read()
+assert output == ""
+```
+
 #### `unchecked`
 
 Forces an expression to return `0` as its exit status. This can be used
 on the left side of `then`, to make sure the right side always executes.
+
+```python
+from duct import cmd, StatusError
+
+try:
+    cmd("false").run()
+except StatusError:
+    pass
+
+cmd("false").unchecked().run()
+```
