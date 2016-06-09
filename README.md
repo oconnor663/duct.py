@@ -44,7 +44,7 @@ so we can build the whole command piece-by-piece:
 ```python
 from duct import cmd, sh, STDOUT, STDERR
 
-echoes = cmd('echo', 'error').stdout(STDERR).then('echo', 'output')
+echoes = cmd('echo', 'error').stdout(STDERR).then(cmd('echo', 'output'))
 pipeline = echoes.stderr(STDOUT).pipe(sh('grep stuff'))
 output = pipeline.read()  # This raises an exception! See below.
 ```
