@@ -139,16 +139,16 @@ def test_nesting():
     assert 'ho' == out
 
 
-def test_cwd():
-    # Test cwd at both the top level and the command level, and that either can
+def test_dir():
+    # Test dir at both the top level and the command level, and that either can
     # be a pathlib Path. Use realpath() on the paths we get from mkdtemp(),
     # because on OSX there's a symlink in there.
     tmpdir = os.path.realpath(tempfile.mkdtemp())
     another = os.path.realpath(tempfile.mkdtemp())
-    assert tmpdir == pwd().cwd(tmpdir).read()
-    assert tmpdir == pwd().cwd(tmpdir).cwd(another).read()
+    assert tmpdir == pwd().dir(tmpdir).read()
+    assert tmpdir == pwd().dir(tmpdir).dir(another).read()
     if has_pathlib:
-        assert tmpdir == pwd().cwd(Path(tmpdir)).read()
+        assert tmpdir == pwd().dir(Path(tmpdir)).read()
 
 
 def test_env():
@@ -327,6 +327,7 @@ def test_repr_round_trip():
         "cmd('foo').then(cmd('bar'))",
         "cmd('foo').then(sh('bar'))",
         "cmd('foo').stdout(STDERR).stderr(STDOUT)",
+        "cmd('foo').dir('stuff')",
     ]
     for expression in expressions:
         assert repr(eval(expression)) == expression

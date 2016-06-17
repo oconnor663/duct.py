@@ -72,8 +72,8 @@ class Expression(object):
     def stderr(self, sink):
         return Stderr(self, sink)
 
-    def cwd(self, path):
-        return Cwd(self, path)
+    def dir(self, path):
+        return Dir(self, path)
 
     def env(self, name, val):
         return Env(self, name, val)
@@ -121,7 +121,7 @@ class Cmd(Expression):
 
     def _exec(self, context):
         proc = safe_popen(
-            self._argv, cwd=context.cwd, env=context.env, stdin=context.stdin,
+            self._argv, cwd=context.dir, env=context.env, stdin=context.stdin,
             stdout=context.stdout, stderr=context.stderr)
         return proc.wait()
 
@@ -137,7 +137,7 @@ class Sh(Expression):
 
     def _exec(self, context):
         proc = safe_popen(
-            self._shell_cmd, shell=True, cwd=context.cwd, env=context.env,
+            self._shell_cmd, shell=True, cwd=context.dir, env=context.env,
             stdin=context.stdin, stdout=context.stdout, stderr=context.stderr)
         return proc.wait()
 
@@ -198,7 +198,7 @@ class Pipe(Expression):
             right_status = self._right._exec(right_context)
         left_status = left_thread.join()
 
-        # Return the rightmost error, if any. Note that cwd and env changes
+        # Return the rightmost error, if any. Note that dir and env changes
         # never propagate out of the pipe. This is the same behavior as bash.
         if right_status != 0:
             return right_status
@@ -298,14 +298,14 @@ class Stderr(IORedirectExpression):
             yield context._replace(stderr=write_pipe)
 
 
-class Cwd(IORedirectExpression):
+class Dir(IORedirectExpression):
     def __init__(self, inner, path):
-        super(Cwd, self).__init__(inner, "cwd", [path])
+        super(Dir, self).__init__(inner, "dir", [path])
         self._path = stringify_if_path(path)
 
     @contextmanager
     def _update_context(self, context):
-        yield context._replace(cwd=self._path)
+        yield context._replace(dir=self._path)
 
 
 class Env(IORedirectExpression):
@@ -351,14 +351,14 @@ class EnvClear(IORedirectExpression):
 # The IOContext represents the child process environment at any given point in
 # the execution of an expression. We read the working directory and the entire
 # environment when we create a new execution context. Methods like .env(),
-# .cwd(), and .pipe() will create new modified contexts and pass those to their
+# .dir(), and .pipe() will create new modified contexts and pass those to their
 # children. The IOContext does *not* own any of the file descriptors it's
 # holding -- it's the caller's responsibility to close those.
 IOContext = namedtuple("IOContext", [
     "stdin",
     "stdout",
     "stderr",
-    "cwd",
+    "dir",
     "env",
     "stdout_capture",
     "stderr_capture",
@@ -372,7 +372,7 @@ def starter_iocontext(stdout_capture, stderr_capture):
         stdin=0,
         stdout=1,
         stderr=2,
-        cwd=os.getcwd(),
+        dir=os.getcwd(),
         # Pretend this dictionary is immutable please.
         env=os.environ.copy(),
         stdout_capture=stdout_capture,

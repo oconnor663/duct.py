@@ -94,7 +94,7 @@ from pathlib import Path
 
 myscript = Path('foo')
 mydir = Path('bar')
-cmd(myscript).cwd(mydir).run()
+cmd(myscript).dir(mydir).run()
 ```
 
 
@@ -231,13 +231,13 @@ from duct import sh, DEVNULL
 sh("echo output && echo junk >&2").stderr(DEVNULL).run()
 ```
 
-#### `cwd`
+#### `dir`
 
 Sets the working directory an expression will execute with. The default
 is the working directory of the parent.
 
 ```python
-output = cmd("pwd").cwd("/").read()
+output = cmd("pwd").dir("/").read()
 assert output == "/"
 ```
 
