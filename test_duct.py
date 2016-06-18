@@ -334,6 +334,7 @@ def test_repr_round_trip():
         "cmd('foo').then(cmd('bar'))",
         "cmd('foo').then(sh('bar'))",
         "cmd('foo').null_stdout().stdout_to_stderr()",
+        "cmd('foo').null_stderr().stderr_to_stdout()",
         "cmd('foo').dir('stuff')",
     ]
     for expression in expressions:

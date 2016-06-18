@@ -323,7 +323,7 @@ class Stderr(IORedirectExpression):
             method_name, args = "null_stderr", []
         elif sink == CAPTURE:
             method_name, args = "capture_stderr", []
-        elif sink == STDERR:
+        elif sink == STDOUT:
             method_name, args = "stderr_to_stdout", []
         else:
             method_name, args = "stderr", [sink]
