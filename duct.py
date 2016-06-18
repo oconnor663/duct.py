@@ -99,11 +99,8 @@ class Expression(object):
     def env(self, name, val):
         return Env(self, name, val)
 
-    def env_remove(self, name):
-        return EnvRemove(self, name)
-
-    def env_clear(self):
-        return EnvClear(self)
+    def full_env(self, env_dict):
+        return FullEnv(self, env_dict)
 
     def unchecked(self):
         return Unchecked(self)
@@ -246,7 +243,7 @@ class IORedirectExpression(Expression):
     def __init__(self, inner_expression, method_name, method_args):
         self._inner = inner_expression
         self._method_name = method_name
-        self._method_args = ", ".join(ioarg_repr(arg) for arg in method_args)
+        self._method_args = ", ".join(repr(arg) for arg in method_args)
 
     def _exec(self, context):
         with self._update_context(context) as updated_context:
@@ -272,7 +269,7 @@ class Input(IORedirectExpression):
         elif is_bytes(arg):
             self._buf = arg
         else:
-            raise TypeError("Not a valid input parameter: " + ioarg_repr(arg))
+            raise TypeError("Not a valid input parameter: " + repr(arg))
 
     @contextmanager
     def _update_context(self, context):
@@ -364,29 +361,14 @@ class Env(IORedirectExpression):
         yield context._replace(env=new_env)
 
 
-class EnvRemove(IORedirectExpression):
-    def __init__(self, inner, name):
-        super(EnvRemove, self).__init__(inner, "env_remove", [name])
-        self._name = name
+class FullEnv(IORedirectExpression):
+    def __init__(self, inner, env_dict):
+        super(FullEnv, self).__init__(inner, "full_env", [env_dict])
+        self._env_dict = env_dict
 
     @contextmanager
     def _update_context(self, context):
-        # Pretend the IOContext is totally immutable. Copy its environment
-        # dictionary instead of modifying it in place.
-        new_env = context.env.copy()
-        new_env.pop(self._name, None)  # avoid throwing if undefined
-        yield context._replace(env=new_env)
-
-
-class EnvClear(IORedirectExpression):
-    def __init__(self, inner):
-        super(EnvClear, self).__init__(inner, "env_clear", [])
-
-    @contextmanager
-    def _update_context(self, context):
-        # Pretend the IOContext is totally immutable. Copy its environment
-        # dictionary instead of modifying it in place.
-        yield context._replace(env={})
+        yield context._replace(env=self._env_dict.copy())
 
 
 # The IOContext represents the child process environment at any given point in
@@ -433,7 +415,7 @@ def child_stdin_pipe(stdin_arg):
             yield read
     else:
         raise TypeError(
-            "Not a valid stdin parameter: " + ioarg_repr(stdin_arg))
+            "Not a valid stdin parameter: " + repr(stdin_arg))
 
 
 @contextmanager
@@ -454,7 +436,7 @@ def child_output_pipe(stdout_pipe, stderr_pipe, capture_pipe, output_arg):
             yield write
     else:
         raise TypeError(
-            "Not a valid output parameter: " + ioarg_repr(output_arg))
+            "Not a valid output parameter: " + repr(output_arg))
 
 
 def is_pipe_already(iovalue):
@@ -557,19 +539,6 @@ def stringify_with_dot_if_path(x):
         # Note that join does nothing if the path is absolute.
         return os.path.join('.', str(x))
     return x
-
-
-def ioarg_repr(arg):
-    constants = {
-        STDOUT: "STDOUT",
-        STDERR: "STDERR",
-        DEVNULL: "DEVNULL",
-        CAPTURE: "CAPTURE",
-    }
-    if arg in constants:
-        return constants[arg]
-    else:
-        return repr(arg)
 
 
 class ThreadWithReturn(threading.Thread):

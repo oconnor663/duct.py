@@ -158,20 +158,13 @@ def test_env():
         assert "foo" == echo_x().env('x', Path('foo')).read()
 
 
-def test_env_remove_and_clear():
-    # Wrap echo to preserve the SYSTEMROOT variable on Windows, since we're
-    # going to be testing env_clear(). Without this, basic Python features like
-    # `import os` will fail.
-    safe_echo = echo_x()
+def test_full_env():
+    # Wrap echo to preserve the SYSTEMROOT variable on Windows. Without this,
+    # basic Python features like `import os` will fail.
+    clear_env = {}
     if os.name == "nt":
-        safe_echo = safe_echo.env("SYSTEMROOT", os.environ["SYSTEMROOT"])
-
-    # Test env_remove and env_clear.
-    assert "" == safe_echo.env_remove('x').env('x', 'foo').read()
-    assert "" == safe_echo.env_clear().env('x', 'foo').read()
-
-    # Check that env_remove is ok with the variable being undefined.
-    assert "" == safe_echo.env_remove('x').env_clear().read()
+        clear_env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+    assert "" == echo_x().full_env(clear_env).env('x', 'foo').read()
 
 
 def test_input():
@@ -327,7 +320,7 @@ def test_repr_round_trip():
     literals, because Python 2 won't emit them.'''
 
     expressions = [
-        "cmd('foo').unchecked().env('a', 'b').env_remove('c').env_clear()",
+        "cmd('foo').unchecked().env('a', 'b').full_env({})",
         "sh('bar').null_stdin().input('')",
         "cmd('foo').pipe(cmd('bar'))",
         "cmd('foo').pipe(sh('bar'))",

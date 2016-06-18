@@ -258,32 +258,23 @@ output = sh("echo 1$FOO").then(sh("echo $FOO")).env("FOO", "bar").read()
 assert output == "bar"
 ```
 
-#### `env_remove`
+#### `full_env`
 
-Unsets an environment variable for an expression, given a name. If the
-variable wasn't defined, this is a no op.
-
-```python
-# The order of operations here is significant. The *inner* parts of an
-# expression take priority. So in this case, env_remove() "happens
-# after" env(), and the FOO variable is cleared. This lets you reason
-# about expressions more locally, when they're broken up into smaller
-# pieces.
-
-output = sh("echo $FOO").env_remove("FOO").env("FOO", "bar").read()
-assert output == ""
-```
-
-#### `env_clear`
-
-Clears the entire parent environment, including `env` values. Note that
-environment variables like `SYSTEMROOT` on Windows might be required by
-child processes, and it's the caller's responsibility to re-`env` these
-variables as needed.
+Sets the entire environment for an expression, so that nothing is
+inherited. This includes both the parent processes's environment, and
+any calls to `env` in parent expressions.
 
 ```python
-output = sh("echo $FOO").env_clear().env("FOO", "bar").read()
-assert output == ""
+# BAR and BAZ are guaranteed to be undefined when this runs.
+prog = sh("echo $FOO$BAR$BAZ").full_env({"FOO": "1"})
+
+# This env var would normally get inherited by the child, but full_env
+# above will prevent it.
+os.environ["BAR"] = "2"
+
+# This env call also gets suppressed.
+output = prog.env("BAZ", "3").read()
+assert output == "1"
 ```
 
 #### `unchecked`
