@@ -66,11 +66,32 @@ class Expression(object):
     def stdin(self, source):
         return Stdin(self, source)
 
+    def null_stdin(self):
+        return Stdin(self, DEVNULL)
+
     def stdout(self, sink):
         return Stdout(self, sink)
 
+    def null_stdout(self):
+        return Stdout(self, DEVNULL)
+
+    def capture_stdout(self):
+        return Stdout(self, CAPTURE)
+
+    def stdout_to_stderr(self):
+        return Stdout(self, STDERR)
+
     def stderr(self, sink):
         return Stderr(self, sink)
+
+    def null_stderr(self):
+        return Stderr(self, DEVNULL)
+
+    def capture_stderr(self):
+        return Stderr(self, CAPTURE)
+
+    def stderr_to_stdout(self):
+        return Stderr(self, STDOUT)
 
     def dir(self, path):
         return Dir(self, path)
@@ -261,7 +282,11 @@ class Input(IORedirectExpression):
 
 class Stdin(IORedirectExpression):
     def __init__(self, inner, source):
-        super(Stdin, self).__init__(inner, "stdin", [source])
+        if source == DEVNULL:
+            method_name, args = "null_stdin", []
+        else:
+            method_name, args = "stdin", [source]
+        super(Stdin, self).__init__(inner, method_name, args)
         self._source = source
 
     @contextmanager
@@ -272,7 +297,15 @@ class Stdin(IORedirectExpression):
 
 class Stdout(IORedirectExpression):
     def __init__(self, inner, sink):
-        super(Stdout, self).__init__(inner, "stdout", [sink])
+        if sink == DEVNULL:
+            method_name, args = "null_stdout", []
+        elif sink == CAPTURE:
+            method_name, args = "capture_stdout", []
+        elif sink == STDERR:
+            method_name, args = "stdout_to_stderr", []
+        else:
+            method_name, args = "stdout", [sink]
+        super(Stdout, self).__init__(inner, method_name, args)
         self._sink = sink
 
     @contextmanager
@@ -286,7 +319,15 @@ class Stdout(IORedirectExpression):
 
 class Stderr(IORedirectExpression):
     def __init__(self, inner, sink):
-        super(Stderr, self).__init__(inner, "stderr", [sink])
+        if sink == DEVNULL:
+            method_name, args = "null_stderr", []
+        elif sink == CAPTURE:
+            method_name, args = "capture_stderr", []
+        elif sink == STDERR:
+            method_name, args = "stderr_to_stdout", []
+        else:
+            method_name, args = "stderr", [sink]
+        super(Stderr, self).__init__(inner, method_name, args)
         self._sink = sink
 
     @contextmanager

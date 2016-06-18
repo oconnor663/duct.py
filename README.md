@@ -42,10 +42,10 @@ The duct version is longer, but duct expressions are composable objects,
 so we can build the whole command piece-by-piece:
 
 ```python
-from duct import cmd, sh, STDOUT, STDERR
+from duct import cmd, sh
 
-echoes = cmd('echo', 'error').stdout(STDERR).then(cmd('echo', 'output'))
-pipeline = echoes.stderr(STDOUT).pipe(sh('grep stuff'))
+echoes = cmd('echo', 'error').stdout_to_stderr().then(cmd('echo', 'output'))
+pipeline = echoes.stderr_to_stdout().pipe(sh('grep stuff'))
 output = pipeline.read()  # This raises an exception! See below.
 ```
 
@@ -137,7 +137,7 @@ If the expression has a non-zero exit status, `run` will raise an
 exception.
 
 ```python
-result = sh("echo foo").stdout(CAPTURE).run()
+result = sh("echo foo").capture_stdout().run()
 assert result.status == 0
 assert result.stdout == b"foo\n"
 assert result.stderr == b""
@@ -147,7 +147,7 @@ assert result.stderr == b""
 
 Execute the expression and capture its output, similar to backticks or
 `$()` in bash. This is a convenience wrapper around `run` which sets
-`stdout(CAPTURE)`, decodes stdout to a string, trims trailing newlines,
+`capture_stdout`, decodes stdout to a string, trims trailing newlines,
 and returns it directly instead of returning a `Result`.
 
 ```python
@@ -192,23 +192,26 @@ output = cmd("cat").input("stuff").read()
 assert output == "stuff"
 ```
 
-#### `stdin`
+#### `stdin`, `null_stdin`
 
 Redirects an expression's stdin to read from a file. The file can be a
-string/bytes/pathlib filepath to open at runtime, an already open file
-or descriptor, or `DEVNULL`.
+string/bytes/pathlib path to open at runtime, or an already open file or
+descriptor. `null_stdin` redirects stdin to `/dev/null` on Unix and
+`nul` on Windows.
 
 ```python
 cmd("cat").stdin("/etc/resolv.conf").run()
+cmd("cat").null_stdin().run()
 ```
 
-#### `stdout`
+#### `stdout`, `null_stdout`, `capture_stdout`, `stdout_to_stderr`
 
-Redirects an expression's stdout to write to a file, similar to `stdin`
-above. In addition to paths, files, and `DEVNULL`, you can pass `STDERR`
-to join stdout with the stderr stream. You can also pass `CAPTURE`, in
-which case duct will spawn a reader thread at runtime and capture stdout
-bytes as `Result.stdout`.
+Redirects an expression's stdout to write to a file The file can by a
+string/bytes/pathlib path to open at runtime, or an already open file or
+descriptor. `null_stdout` redirects to `/dev/null` on Unix or `nul` on
+Windows. `capture_stdout` redirects to a pipe whose output bytes end up
+as `Result.stdout`. `stdout_to_stderr` merges stdout into the stderr
+stream.
 
 ```python
 from duct import sh
@@ -217,18 +220,22 @@ from pathlib import Path
 temp_dir = sh("mktemp -d").read()
 temp_file = Path(temp_dir) / "file.txt"
 sh("echo some stuff").stdout(temp_file).run()
+
+result = sh("echo more stuff").capture_stdout().run()
+assert result.stdout == b"more stuff\n"
 ```
 
-#### `stderr`
+#### `stderr`, `null_stderr`, `capture_stderr`, `stderr_to_stdout`
 
-Similar to `stdout`. You can pass `STDOUT` to join stderr with the
-stdout stream. Output captured with `CAPTURE` is returned as
-`Result.stderr`.
+Analogous to the `stdout` methods.
 
 ```python
-from duct import sh, DEVNULL
+from duct import sh
 
-sh("echo output && echo junk >&2").stderr(DEVNULL).run()
+sh("echo output && echo junk >&2").null_stderr().run()
+
+result = sh("echo error stuff >&2").capture_stderr().run()
+assert result.stderr == b"error stuff\n"
 ```
 
 #### `dir`

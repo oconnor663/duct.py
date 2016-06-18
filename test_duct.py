@@ -8,7 +8,7 @@ import textwrap
 from pytest import raises, mark
 
 import duct
-from duct import cmd, sh, DEVNULL, STDOUT, STDERR, CAPTURE, StatusError
+from duct import cmd, sh, StatusError
 
 try:
     from pathlib import Path
@@ -82,7 +82,7 @@ def test_hello_world():
 
 
 def test_result():
-    result = sh('echo more stuff').stdout(CAPTURE).run()
+    result = sh('echo more stuff').capture_stdout().run()
     assert b"more stuff" + NEWLINE == result.stdout
     assert b"" == result.stderr
     assert 0 == result.status
@@ -195,7 +195,7 @@ def test_stdin():
         out = replace('o', 'c').stdin(f).read()
         assert 'fcc' == out
     # with explicit DEVNULL
-    out = replace('o', 'd').stdin(DEVNULL).read()
+    out = replace('o', 'd').null_stdin().read()
     assert '' == out
 
 
@@ -218,20 +218,27 @@ def test_stdout():
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with explicit DEVNULL
-    out = sh('echo hi').stdout(DEVNULL).read()
+    out = sh('echo hi').null_stdout().read()
     assert '' == out
     # to STDERR
-    result = sh('echo hi').stdout(STDERR).stdout(CAPTURE).stderr(CAPTURE).run()
+    result = (sh('echo hi')
+              .stdout_to_stderr()
+              .capture_stdout()
+              .capture_stderr()
+              .run())
     assert b'' == result.stdout
     assert b'hi' + NEWLINE == result.stderr
     # from stderr with STDOUT (note Windows would output any space before >)
-    result = (sh('echo hi>&2').stderr(STDOUT).stdout(CAPTURE).stderr(CAPTURE)
+    result = (sh('echo hi>&2')
+              .stderr_to_stdout()
+              .capture_stdout()
+              .capture_stderr()
               .run())
     assert b'hi' + NEWLINE == result.stdout
     assert b'' == result.stderr
     # Swapping both ends up with them joined (for better or worse).
-    result = (sh('echo hi&& echo lo>&2').stdout(STDERR).stderr(STDOUT)
-              .stdout(CAPTURE).stderr(CAPTURE).run())
+    result = (sh('echo hi&& echo lo>&2').stdout_to_stderr().stderr_to_stdout()
+              .capture_stdout().capture_stderr().run())
     assert b'hi' + NEWLINE + b'lo' + NEWLINE == result.stdout
     assert b'' == result.stderr
 
@@ -321,12 +328,12 @@ def test_repr_round_trip():
 
     expressions = [
         "cmd('foo').unchecked().env('a', 'b').env_remove('c').env_clear()",
-        "sh('bar').stdin(DEVNULL).input('')",
+        "sh('bar').null_stdin().input('')",
         "cmd('foo').pipe(cmd('bar'))",
         "cmd('foo').pipe(sh('bar'))",
         "cmd('foo').then(cmd('bar'))",
         "cmd('foo').then(sh('bar'))",
-        "cmd('foo').stdout(STDERR).stderr(STDOUT)",
+        "cmd('foo').null_stdout().stdout_to_stderr()",
         "cmd('foo').dir('stuff')",
     ]
     for expression in expressions:
@@ -337,7 +344,7 @@ def test_swap_and_redirect_at_same_time():
     '''We need to make sure that setting e.g. stderr=STDOUT while also setting
     stdout=CAPTURE means that stderr joins the redirected stdout, rather than
     joining what stdout used to be.'''
-    err_out = sh('echo hi>&2').stderr(STDOUT).read()
+    err_out = sh('echo hi>&2').stderr_to_stdout().read()
     assert err_out == 'hi'
 
 
