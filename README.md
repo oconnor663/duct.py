@@ -148,11 +148,12 @@ assert result.stderr == b""
 Execute the expression and capture its output, similar to backticks or
 `$()` in bash. This is a convenience wrapper around `run` which sets
 `capture_stdout`, decodes stdout as UTF-8, trims trailing newlines, and
-returns it directly instead of returning a `Result`.
+returns it directly instead of returning a `Result`. Note that in Python
+2 the return value is a *unicode* string.
 
 ```python
-output = sh("echo foo").read()
-assert output == "foo"
+output = sh("echo 日本語").read()
+assert output == u"日本語"
 ```
 
 ### Pipe building methods
