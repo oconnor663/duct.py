@@ -15,14 +15,14 @@ heck to do about this.
 
 ## Executing a local script from a path object
 
-It should be possible to invoke `./foo.sh` using the native path type. This
-works fine in Rust, but it's tricky in Python, because `Path("./foo.sh")`
-stringifies to `"foo.sh"`, and invoking that is an error (assuming "foo.sh" is
-present only in the current directory, and not in the $PATH). The Python
-implementation works aroud this by `path.join`ing a leading `.` onto any
-non-absolute path after stringifying it. Ideally implementations that need this
-sort of workaround should preserve the usual OS semantics for non-path strings,
-so that `cmd("foo.sh")` is still an error in this case on POSIX systems.
+It should be possible to invoke `./foo.sh` using the native path type. This is
+tricky in Python, because `Path("./foo.sh")` stringifies to `"foo.sh"`, and
+invoking that is an error (assuming "foo.sh" is present only in the current
+directory, and not in the $PATH). The Python implementation works aroud this by
+`path.join`ing a leading `.` onto any non-absolute path after stringifying it.
+Ideally implementations that need this sort of workaround should preserve the
+usual OS semantics for non-path strings, so that `cmd("foo.sh")` is still an
+error in this case on POSIX systems.
 
 Note that what counts as an "absolute path" can be subtle on Windows. In
 particular, `\foo\bar.txt` is usually *not* considered absolute, because it
