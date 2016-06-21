@@ -227,7 +227,8 @@ assert result.stdout == b"more stuff\n"
 
 #### `stderr`, `null_stderr`, `capture_stderr`, `stderr_to_stdout`
 
-Analogous to the `stdout` methods.
+Analogous to the `stdout` methods. `capture_stderr` redirects to a pipe
+whose output bytes end up as `Result.stderr`.
 
 ```python
 from duct import sh
