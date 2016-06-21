@@ -254,7 +254,7 @@ Sets an environment variable for an expression, given a name and a
 value.
 
 ```python
-output = sh("echo 1$FOO").then(sh("echo $FOO")).env("FOO", "bar").read()
+output = sh("echo $FOO").env("FOO", "bar").read()
 assert output == "bar"
 ```
 
