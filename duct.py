@@ -216,8 +216,7 @@ class Pipe(Expression):
             right_status = self._right._exec(right_context)
         left_status = left_thread.join()
 
-        # Return the rightmost error, if any. Note that dir and env changes
-        # never propagate out of the pipe. This is the same behavior as bash.
+        # Return the rightmost error, if any.
         if right_status != 0:
             return right_status
         else:
