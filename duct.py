@@ -602,7 +602,7 @@ def decode_with_universal_newlines(b):
     newlines mode, but it's a bit cleaner to do it ourselves. That saves us
     from passing around the mode all over the place, and from having decoding
     exceptions thrown on reader threads.'''
-    return b.decode().replace('\r\n', '\n').replace('\r', '\n')
+    return b.decode('utf8').replace('\r\n', '\n').replace('\r', '\n')
 
 
 def encode_with_universal_newlines(s):

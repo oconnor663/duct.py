@@ -1,4 +1,5 @@
 #! /usr/bin/env nosetests
+# coding=UTF-8
 
 import binascii
 import os
@@ -388,3 +389,7 @@ def test_local_path_doesnt_match_PATH():
         cmd(echo_path).run()
     with raises(duct.StatusError):
         sh(echo_path).run()
+
+def test_read_unicode():
+    out = sh("echo 日本語").read()
+    assert out == u"日本語"

@@ -147,8 +147,8 @@ assert result.stderr == b""
 
 Execute the expression and capture its output, similar to backticks or
 `$()` in bash. This is a convenience wrapper around `run` which sets
-`capture_stdout`, decodes stdout to a string, trims trailing newlines,
-and returns it directly instead of returning a `Result`.
+`capture_stdout`, decodes stdout as UTF-8, trims trailing newlines, and
+returns it directly instead of returning a `Result`.
 
 ```python
 output = sh("echo foo").read()
