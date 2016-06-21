@@ -46,7 +46,7 @@ from duct import cmd, sh
 
 echoes = cmd('echo', 'error').stdout_to_stderr().then(cmd('echo', 'output'))
 pipeline = echoes.stderr_to_stdout().pipe(sh('grep stuff'))
-output = pipeline.read()  # This raises an exception! See below.
+pipeline.run()  # This will raise an exception! See below.
 ```
 
 
@@ -159,9 +159,9 @@ assert output == "foo"
 
 #### `pipe`
 
-Create a pipe expression, similar to `|` in bash. The the argument is
-the right side of the pipe, which can be any duct expression. The status
-of a pipe expression is equal to the right side's status if it's
+Create a pipe expression, similar to `|` in bash. The argument becomes
+the right side of the pipe, and it can be any duct expression. The
+status of a pipe expression is equal to the right side's status if it's
 nonzero, otherwise the left side's.
 
 ```python
