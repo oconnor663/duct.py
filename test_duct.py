@@ -391,5 +391,9 @@ def test_local_path_doesnt_match_PATH():
         sh(echo_path).run()
 
 def test_read_unicode():
+    if os.name == "nt":
+        # Unicode command line parameters on Windows don't seem to work without
+        # this incantation. See http://stackoverflow.com/a/388500/823869.
+        sh("chcp 65001").run()
     out = sh("echo 日本語").read()
     assert out == u"日本語"
