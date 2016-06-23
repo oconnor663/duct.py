@@ -390,10 +390,15 @@ def test_local_path_doesnt_match_PATH():
     with raises(duct.StatusError):
         sh(echo_path).run()
 
-def test_read_unicode():
-    if os.name == "nt":
-        # Unicode command line parameters on Windows don't seem to work without
-        # this incantation. See http://stackoverflow.com/a/388500/823869.
-        sh("chcp 65001").run()
-    out = sh("echo 日本語").read()
+
+def test_unicode():
+    # Windows has very wonky Unicode handling in command line params, so
+    # instead of worrying about that we just test that we can send UTF-8 input
+    # and read UTF-8 output.
+    in_str = u"日本語"
+    cat = head_bytes(-1)
+    out = cat.input(in_str).read()
     assert out == u"日本語"
+
+    result = cat.input(in_str).capture_stdout().run()
+    assert result.stdout == in_str.encode('utf8')

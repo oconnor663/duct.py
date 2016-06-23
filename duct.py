@@ -605,4 +605,4 @@ def decode_with_universal_newlines(b):
 
 
 def encode_with_universal_newlines(s):
-    return s.replace('\n', os.linesep).encode()
+    return s.replace('\n', os.linesep).encode('utf8')
