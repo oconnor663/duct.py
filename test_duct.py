@@ -1,4 +1,3 @@
-#! /usr/bin/env nosetests
 # coding=UTF-8
 
 import binascii
