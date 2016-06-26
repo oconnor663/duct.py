@@ -36,9 +36,14 @@ def false():
 
 def head_bytes(c):
     code = textwrap.dedent('''\
-        import sys
-        input_str = sys.stdin.read({0})
-        sys.stdout.write(input_str)
+        import os
+        # PyPy3 on Travis has a wonky bug where stdin and stdout can't read
+        # unicode. This is a workaround. The bug doesn't repro on Arch, though,
+        # so presumably it'll be fixed when they upgrade eventually.
+        stdin = os.fdopen(0, 'r')
+        stdout = os.fdopen(1, 'w')
+        input_str = stdin.read({0})
+        stdout.write(input_str)
         '''.format(c))
     return cmd('python', '-c', code)
 
