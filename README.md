@@ -285,8 +285,6 @@ Forces an expression to return `0` as its exit status. This can be used
 on the left side of `then`, to make sure the right side always executes.
 
 ```python
-from duct import cmd, StatusError
-
 # Raises a StatusError!
 cmd("false").run()
 
