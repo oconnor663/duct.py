@@ -287,10 +287,10 @@ on the left side of `then`, to make sure the right side always executes.
 ```python
 from duct import cmd, StatusError
 
-try:
-    cmd("false").run()
-except StatusError:
-    pass
+# Raises a StatusError!
+cmd("false").run()
 
-cmd("false").unchecked().run()
+# Does not raise an error.
+result = cmd("false").unchecked().run()
+assert result.status == 0
 ```
