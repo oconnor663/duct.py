@@ -178,7 +178,7 @@ right side runs. If you want to ignore errors on the left side, similar
 to `;` in bash, use `unchecked` around the left expression.
 
 ```python
-cmd("false").then(sh("echo this won't happen")).run()  # StatusError
+cmd("false").then(sh("echo we never get here")).run()  # StatusError
 ```
 
 ### Redirections etc.
