@@ -1,6 +1,9 @@
 # duct.py [![Build Status](https://travis-ci.org/oconnor663/duct.py.svg?branch=master)](https://travis-ci.org/oconnor663/duct.py) [![Build status](https://ci.appveyor.com/api/projects/status/0ecgamtb43j8o8ig/branch/master?svg=true)](https://ci.appveyor.com/project/oconnor663/duct-py/branch/master) [![Coverage Status](https://coveralls.io/repos/oconnor663/duct.py/badge.svg?branch=master&service=github)](https://coveralls.io/github/oconnor663/duct.py?branch=master)
 
-A Python library for shelling out.
+
+A Python library for shelling out. One of the goals of duct is to be
+easily portable to other languages, and there's a [Rust
+version](https://github.com/oconnor663/duct.rs) happening in parallel.
 
 
 ## Easy things should be easy.
