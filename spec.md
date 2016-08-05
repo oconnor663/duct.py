@@ -1,5 +1,9 @@
 # Notes for implementers
 
+Duct was designed for both Python and Rust, and the hope is that it can be
+cloned in lots of different languages. To help with that, this document
+clarifies how duct handles a number of different corner cases.
+
 ## SIGPIPE
 
 Implementations need to catch broken pipe errors in input writer threads, so
@@ -13,28 +17,31 @@ exception/result mechanism instead of killing the whole process.
 Implementations in languages that don't (C++?) will need to figure out what the
 heck to do about this.
 
-## Executing a local script from a path object
+## Ambiguity between the $PATH and the current directory
 
-It should be possible to invoke `./foo.sh` using the native path type. This is
-tricky in Python, because `Path("./foo.sh")` stringifies to `"foo.sh"`, and
-invoking that is an error (assuming "foo.sh" is present only in the current
-directory, and not in the $PATH). The Python implementation works aroud this by
-`path.join`ing a leading `.` onto any non-absolute path after stringifying it.
-Ideally implementations that need this sort of workaround should preserve the
-usual OS semantics for non-path strings, so that `cmd("foo.sh")` is still an
-error in this case on POSIX systems.
+When we run the command "foo", it's ambiguous whether we mean "foo" somewhere
+in the `$PATH`/`%PATH%` or "foo" in current directory. Different OS's do
+different things here: Posix usually requires a leading `./` for programs in
+the current directory, but Windows will accept the bare name. In duct we mostly
+just go with the flow on these conventions, by passing string arguments
+straight through to the OS.
 
-Note that what counts as an "absolute path" can be subtle on Windows. In
-particular, `\foo\bar.txt` is usually *not* considered absolute, because it
-doesn't include a drive letter (e.g. `C:\foo\bar.txt`). When doing the
-join-leading-dot workaround, implementations should avoid adding dots to these
-almost-absolute paths. That said, many path join implementations will do the
-right thing here and ignore the dot.
+However, when the program name is given as an explicit path type (like
+`pathlib.Path` in Python), duct guarantees that it will behave like a filepath.
+To make this work, when we stringify path objects representing relative paths,
+we join a leading `.` if it's missing. This solves two problems:
 
-Although it's tempting to have `sh` accept only strings and not paths, it's
-important to be able to execute paths in shell mode on Windows, where scripts
-have no unix-style shebang and instead rely on the shell to figure out what
-their interpreter should be.
+- It prevents "command not found" errors on Posix for paths to programs in the
+  current dir. This is especially important in Python, where the native path
+  type actively strips out dots.
+- It prevents paths to a nonexistent local file, which _should_ result in
+  "command not found", from instead matching a program in the `$PATH`.
+
+Note that this applies to `sh` in addition to `cmd`. Although it's tempting to
+have `sh` accept only strings and not paths, it's important to be able to
+execute paths in shell mode on Windows, where scripts have no Unix-style
+shebang and instead rely on the shell to figure out what their interpreter
+should be.
 
 ## Picking a shell
 
