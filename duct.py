@@ -66,16 +66,16 @@ class Expression(object):
     def stdin(self, source):
         return Stdin(self, source)
 
-    def null_stdin(self):
+    def stdin_null(self):
         return Stdin(self, DEVNULL)
 
     def stdout(self, sink):
         return Stdout(self, sink)
 
-    def null_stdout(self):
+    def stdout_null(self):
         return Stdout(self, DEVNULL)
 
-    def capture_stdout(self):
+    def stdout_capture(self):
         return Stdout(self, CAPTURE)
 
     def stdout_to_stderr(self):
@@ -84,10 +84,10 @@ class Expression(object):
     def stderr(self, sink):
         return Stderr(self, sink)
 
-    def null_stderr(self):
+    def stderr_null(self):
         return Stderr(self, DEVNULL)
 
-    def capture_stderr(self):
+    def stderr_capture(self):
         return Stderr(self, CAPTURE)
 
     def stderr_to_stdout(self):
@@ -279,7 +279,7 @@ class Input(IORedirectExpression):
 class Stdin(IORedirectExpression):
     def __init__(self, inner, source):
         if source == DEVNULL:
-            method_name, args = "null_stdin", []
+            method_name, args = "stdin_null", []
         else:
             method_name, args = "stdin", [source]
         super(Stdin, self).__init__(inner, method_name, args)
@@ -294,9 +294,9 @@ class Stdin(IORedirectExpression):
 class Stdout(IORedirectExpression):
     def __init__(self, inner, sink):
         if sink == DEVNULL:
-            method_name, args = "null_stdout", []
+            method_name, args = "stdout_null", []
         elif sink == CAPTURE:
-            method_name, args = "capture_stdout", []
+            method_name, args = "stdout_capture", []
         elif sink == STDERR:
             method_name, args = "stdout_to_stderr", []
         else:
@@ -316,9 +316,9 @@ class Stdout(IORedirectExpression):
 class Stderr(IORedirectExpression):
     def __init__(self, inner, sink):
         if sink == DEVNULL:
-            method_name, args = "null_stderr", []
+            method_name, args = "stderr_null", []
         elif sink == CAPTURE:
-            method_name, args = "capture_stderr", []
+            method_name, args = "stderr_capture", []
         elif sink == STDOUT:
             method_name, args = "stderr_to_stdout", []
         else:

@@ -140,7 +140,7 @@ If the expression has a non-zero exit status, `run` will raise an
 exception.
 
 ```python
-result = sh("echo foo").capture_stdout().run()
+result = sh("echo foo").stdout_capture().run()
 assert result.status == 0
 assert result.stdout == b"foo\n"
 assert result.stderr == b""
@@ -150,7 +150,7 @@ assert result.stderr == b""
 
 Execute the expression and capture its output, similar to backticks or
 `$()` in bash. This is a convenience wrapper around `run` which sets
-`capture_stdout`, decodes stdout as UTF-8, trims trailing newlines, and
+`stdout_capture`, decodes stdout as UTF-8, trims trailing newlines, and
 returns it directly instead of returning a `Result`. Note that in Python
 2 the return value is a *unicode* string.
 
@@ -196,24 +196,24 @@ output = cmd("cat").input("stuff").read()
 assert output == "stuff"
 ```
 
-#### `stdin`, `null_stdin`
+#### `stdin`, `stdin_null`
 
 Redirects an expression's stdin to read from a file. The file can be a
 string/bytes/pathlib path to open at runtime, or an already open file or
-descriptor. `null_stdin` redirects stdin to `/dev/null` on Unix and
+descriptor. `stdin_null` redirects stdin to `/dev/null` on Unix and
 `nul` on Windows.
 
 ```python
 cmd("cat").stdin("/etc/resolv.conf").run()
-cmd("cat").null_stdin().run()
+cmd("cat").stdin_null().run()
 ```
 
-#### `stdout`, `null_stdout`, `capture_stdout`, `stdout_to_stderr`
+#### `stdout`, `stdout_null`, `stdout_capture`, `stdout_to_stderr`
 
-Redirects an expression's stdout to write to a file The file can by a
+Redirects an expression's stdout to write to a file. The file can by a
 string/bytes/pathlib path to open at runtime, or an already open file or
-descriptor. `null_stdout` redirects to `/dev/null` on Unix or `nul` on
-Windows. `capture_stdout` redirects to a pipe whose output bytes end up
+descriptor. `stdout_null` redirects to `/dev/null` on Unix or `nul` on
+Windows. `stdout_capture` redirects to a pipe whose output bytes end up
 as `Result.stdout`. `stdout_to_stderr` replaces stdout with a copy of
 the stderr pipe.
 
@@ -225,21 +225,21 @@ temp_dir = sh("mktemp -d").read()
 temp_file = Path(temp_dir) / "file.txt"
 sh("echo some stuff").stdout(temp_file).run()
 
-result = sh("echo more stuff").capture_stdout().run()
+result = sh("echo more stuff").stdout_capture().run()
 assert result.stdout == b"more stuff\n"
 ```
 
-#### `stderr`, `null_stderr`, `capture_stderr`, `stderr_to_stdout`
+#### `stderr`, `stderr_null`, `stderr_capture`, `stderr_to_stdout`
 
-Analogous to the `stdout` methods. `capture_stderr` redirects to a pipe
+Analogous to the `stdout` methods. `stderr_capture` redirects to a pipe
 whose output bytes end up as `Result.stderr`.
 
 ```python
 from duct import sh
 
-sh("echo output && echo junk >&2").null_stderr().run()
+sh("echo output && echo junk >&2").stderr_null().run()
 
-result = sh("echo error stuff >&2").capture_stderr().run()
+result = sh("echo error stuff >&2").stderr_capture().run()
 assert result.stderr == b"error stuff\n"
 ```
 

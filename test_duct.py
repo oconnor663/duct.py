@@ -87,7 +87,7 @@ def test_hello_world():
 
 
 def test_result():
-    result = sh('echo more stuff').capture_stdout().run()
+    result = sh('echo more stuff').stdout_capture().run()
     assert b"more stuff" + NEWLINE == result.stdout
     assert b"" == result.stderr
     assert 0 == result.status
@@ -193,7 +193,7 @@ def test_stdin():
         out = replace('o', 'c').stdin(f).read()
         assert 'fcc' == out
     # with explicit DEVNULL
-    out = replace('o', 'd').null_stdin().read()
+    out = replace('o', 'd').stdin_null().read()
     assert '' == out
 
 
@@ -216,27 +216,27 @@ def test_stdout():
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with explicit DEVNULL
-    out = sh('echo hi').null_stdout().read()
+    out = sh('echo hi').stdout_null().read()
     assert '' == out
     # to STDERR
     result = (sh('echo hi')
               .stdout_to_stderr()
-              .capture_stdout()
-              .capture_stderr()
+              .stdout_capture()
+              .stderr_capture()
               .run())
     assert b'' == result.stdout
     assert b'hi' + NEWLINE == result.stderr
     # from stderr with STDOUT (note Windows would output any space before >)
     result = (sh('echo hi>&2')
               .stderr_to_stdout()
-              .capture_stdout()
-              .capture_stderr()
+              .stdout_capture()
+              .stderr_capture()
               .run())
     assert b'hi' + NEWLINE == result.stdout
     assert b'' == result.stderr
     # Swapping both ends up with them joined (for better or worse).
     result = (sh('echo hi&& echo lo>&2').stdout_to_stderr().stderr_to_stdout()
-              .capture_stdout().capture_stderr().run())
+              .stdout_capture().stderr_capture().run())
     assert b'hi' + NEWLINE + b'lo' + NEWLINE == result.stdout
     assert b'' == result.stderr
 
@@ -326,13 +326,13 @@ def test_repr_round_trip():
 
     expressions = [
         "cmd('foo').unchecked().env('a', 'b').full_env({})",
-        "sh('bar').null_stdin().input('')",
+        "sh('bar').stdin_null().input('')",
         "cmd('foo').pipe(cmd('bar'))",
         "cmd('foo').pipe(sh('bar'))",
         "cmd('foo').then(cmd('bar'))",
         "cmd('foo').then(sh('bar'))",
-        "cmd('foo').null_stdout().stdout_to_stderr()",
-        "cmd('foo').null_stderr().stderr_to_stdout()",
+        "cmd('foo').stdout_null().stdout_to_stderr()",
+        "cmd('foo').stderr_null().stderr_to_stdout()",
         "cmd('foo').dir('stuff')",
     ]
     for expression in expressions:
@@ -340,8 +340,8 @@ def test_repr_round_trip():
 
 
 def test_swap_and_redirect_at_same_time():
-    '''We need to make sure that setting e.g. stderr=STDOUT while also setting
-    stdout=CAPTURE means that stderr joins the redirected stdout, rather than
+    '''We need to make sure that doing e.g. stderr_to_stdout while also doing
+    stdout_capture means that stderr joins the redirected stdout, rather than
     joining what stdout used to be.'''
     err_out = sh('echo hi>&2').stderr_to_stdout().read()
     assert err_out == 'hi'
@@ -404,5 +404,5 @@ def test_unicode():
     out = cat.input(in_str).read()
     assert out == u"日本語"
 
-    result = cat.input(in_str).capture_stdout().run()
+    result = cat.input(in_str).stdout_capture().run()
     assert result.stdout == in_str.encode('utf8')
