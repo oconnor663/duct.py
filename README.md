@@ -26,10 +26,10 @@ That's exactly the same as the following in standard Python 3.5:
 from subprocess import run, PIPE
 
 result = run('git symbolic-ref --short HEAD', shell=True, stdout=PIPE,
-             universal_newlines=True)
+             universal_newlines=True, check=True)
 current_branch = result.stdout.rstrip('\n')
 
-run(['git', 'log', current_branch])
+run(['git', 'log', current_branch], check=True)
 ```
 
 
