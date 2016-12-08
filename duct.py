@@ -12,13 +12,6 @@ except ImportError:
     class PurePath:
         pass
 
-# same as in the subprocess module
-STDOUT = -2
-DEVNULL = -3
-# not defined in subprocess (value may change)
-STDERR = -4
-CAPTURE = -5
-
 
 def cmd(prog, *args):
     return Cmd(prog, args)
@@ -50,7 +43,7 @@ class Expression(object):
         '''Execute the expression and capture its output, similar to backticks
         or $() in the shell. This is a wrapper around run() which captures
         stdout, decodes it, trims it, and returns it directly.'''
-        result = self.stdout(CAPTURE).run()
+        result = self.stdout_capture().run()
         stdout_str = decode_with_universal_newlines(result.stdout)
         return stdout_str.rstrip('\n')
 
@@ -63,35 +56,44 @@ class Expression(object):
     def input(self, buf):
         return Input(self, buf)
 
-    def stdin(self, source):
-        return Stdin(self, source)
+    def stdin(self, path):
+        return Stdin(self, path)
+
+    def stdin_file(self, file_):
+        return StdinFile(self, file_)
 
     def stdin_null(self):
-        return Stdin(self, DEVNULL)
+        return StdinNull(self)
 
-    def stdout(self, sink):
-        return Stdout(self, sink)
+    def stdout(self, path):
+        return Stdout(self, path)
+
+    def stdout_file(self, file_):
+        return StdoutFile(self, file_)
 
     def stdout_null(self):
-        return Stdout(self, DEVNULL)
+        return StdoutNull(self)
 
     def stdout_capture(self):
-        return Stdout(self, CAPTURE)
+        return StdoutCapture(self)
 
     def stdout_to_stderr(self):
-        return Stdout(self, STDERR)
+        return StdoutToStderr(self)
 
-    def stderr(self, sink):
-        return Stderr(self, sink)
+    def stderr(self, path):
+        return Stderr(self, path)
+
+    def stderr_file(self, file_):
+        return StderrFile(self, file_)
 
     def stderr_null(self):
-        return Stderr(self, DEVNULL)
+        return StderrNull(self)
 
     def stderr_capture(self):
-        return Stderr(self, CAPTURE)
+        return StderrCapture(self)
 
     def stderr_to_stdout(self):
-        return Stderr(self, STDOUT)
+        return StderrToStdout(self)
 
     def dir(self, path):
         return Dir(self, path)
@@ -277,62 +279,132 @@ class Input(IORedirectExpression):
 
 
 class Stdin(IORedirectExpression):
-    def __init__(self, inner, source):
-        if source == DEVNULL:
-            method_name, args = "stdin_null", []
-        else:
-            method_name, args = "stdin", [source]
-        super(Stdin, self).__init__(inner, method_name, args)
-        self._source = source
+    def __init__(self, inner, path):
+        super(Stdin, self).__init__(inner, "stdin", [path])
+        self._path = path
 
     @contextmanager
     def _update_context(self, context):
-        with child_stdin_pipe(self._source) as read_pipe:
-            yield context._replace(stdin=read_pipe)
+        with open_path(self._path, "r") as f:
+            yield context._replace(stdin=f)
+
+
+class StdinFile(IORedirectExpression):
+    def __init__(self, inner, file_):
+        super(StdinFile, self).__init__(inner, "stdin_file", [file_])
+        self._file = file_
+
+    @contextmanager
+    def _update_context(self, context):
+        yield context._replace(stdin=self._file)
+
+
+class StdinNull(IORedirectExpression):
+    def __init__(self, inner):
+        super(StdinNull, self).__init__(inner, "stdin_null", [])
+
+    @contextmanager
+    def _update_context(self, context):
+        with open_devnull("r") as f:
+            yield context._replace(stdin=f)
 
 
 class Stdout(IORedirectExpression):
-    def __init__(self, inner, sink):
-        if sink == DEVNULL:
-            method_name, args = "stdout_null", []
-        elif sink == CAPTURE:
-            method_name, args = "stdout_capture", []
-        elif sink == STDERR:
-            method_name, args = "stdout_to_stderr", []
-        else:
-            method_name, args = "stdout", [sink]
-        super(Stdout, self).__init__(inner, method_name, args)
-        self._sink = sink
+    def __init__(self, inner, path):
+        super(Stdout, self).__init__(inner, "stdout", [path])
+        self._path = path
 
     @contextmanager
     def _update_context(self, context):
-        with child_output_pipe(context.stdout,
-                               context.stderr,
-                               context.stdout_capture,
-                               self._sink) as write_pipe:
-            yield context._replace(stdout=write_pipe)
+        with open_path(self._path, "w") as f:
+            yield context._replace(stdout=f)
+
+
+class StdoutFile(IORedirectExpression):
+    def __init__(self, inner, file_):
+        super(StdoutFile, self).__init__(inner, "stdout_file", [file_])
+        self._file = file_
+
+    @contextmanager
+    def _update_context(self, context):
+        yield context._replace(stdout=self._file)
+
+
+class StdoutNull(IORedirectExpression):
+    def __init__(self, inner):
+        super(StdoutNull, self).__init__(inner, "stdout_null", [])
+
+    @contextmanager
+    def _update_context(self, context):
+        with open_devnull("w") as f:
+            yield context._replace(stdout=f)
+
+
+class StdoutCapture(IORedirectExpression):
+    def __init__(self, inner):
+        super(StdoutCapture, self).__init__(inner, "stdout_capture", [])
+
+    @contextmanager
+    def _update_context(self, context):
+        yield context._replace(stdout=context.stdout_capture)
+
+
+class StdoutToStderr(IORedirectExpression):
+    def __init__(self, inner):
+        super(StdoutToStderr, self).__init__(inner, "stdout_to_stderr", [])
+
+    @contextmanager
+    def _update_context(self, context):
+        yield context._replace(stdout=context.stderr)
 
 
 class Stderr(IORedirectExpression):
-    def __init__(self, inner, sink):
-        if sink == DEVNULL:
-            method_name, args = "stderr_null", []
-        elif sink == CAPTURE:
-            method_name, args = "stderr_capture", []
-        elif sink == STDOUT:
-            method_name, args = "stderr_to_stdout", []
-        else:
-            method_name, args = "stderr", [sink]
-        super(Stderr, self).__init__(inner, method_name, args)
-        self._sink = sink
+    def __init__(self, inner, path):
+        super(Stderr, self).__init__(inner, "stderr", [path])
+        self._path = path
 
     @contextmanager
     def _update_context(self, context):
-        with child_output_pipe(context.stdout,
-                               context.stderr,
-                               context.stderr_capture,
-                               self._sink) as write_pipe:
-            yield context._replace(stderr=write_pipe)
+        with open_path(self._path, "w") as f:
+            yield context._replace(stderr=f)
+
+
+class StderrFile(IORedirectExpression):
+    def __init__(self, inner, file_):
+        super(StderrFile, self).__init__(inner, "stderr_file", [file_])
+        self._file = file_
+
+    @contextmanager
+    def _update_context(self, context):
+        yield context._replace(stderr=self._file)
+
+
+class StderrNull(IORedirectExpression):
+    def __init__(self, inner):
+        super(StderrNull, self).__init__(inner, "stderr_null", [])
+
+    @contextmanager
+    def _update_context(self, context):
+        with open_devnull("w") as f:
+            yield context._replace(stderr=f)
+
+
+class StderrCapture(IORedirectExpression):
+    def __init__(self, inner):
+        super(StderrCapture, self).__init__(inner, "stderr_capture", [])
+
+    @contextmanager
+    def _update_context(self, context):
+        yield context._replace(stderr=context.stderr_capture)
+
+
+class StderrToStdout(IORedirectExpression):
+    def __init__(self, inner):
+        super(StderrToStdout, self).__init__(inner, "stderr_to_stdout", [])
+
+    @contextmanager
+    def _update_context(self, context):
+        yield context._replace(stderr=context.stdout)
 
 
 class Dir(IORedirectExpression):
@@ -403,55 +475,6 @@ def starter_iocontext(stdout_capture, stderr_capture):
 
 
 @contextmanager
-def child_stdin_pipe(stdin_arg):
-    if is_pipe_already(stdin_arg):
-        yield stdin_arg
-    elif stdin_arg == DEVNULL:
-        with open_devnull('r') as read:
-            yield read
-    elif could_be_path(stdin_arg):
-        with open_path(stdin_arg, 'r') as read:
-            yield read
-    else:
-        raise TypeError(
-            "Not a valid stdin parameter: " + repr(stdin_arg))
-
-
-@contextmanager
-def child_output_pipe(stdout_pipe, stderr_pipe, capture_pipe, output_arg):
-    if is_pipe_already(output_arg):
-        yield output_arg
-    elif output_arg == DEVNULL:
-        with open_devnull('w') as write:
-            yield write
-    elif output_arg == STDOUT:
-        yield stdout_pipe
-    elif output_arg == STDERR:
-        yield stderr_pipe
-    elif output_arg == CAPTURE:
-        yield capture_pipe
-    elif could_be_path(output_arg):
-        with open_path(output_arg, 'w') as write:
-            yield write
-    else:
-        raise TypeError(
-            "Not a valid output parameter: " + repr(output_arg))
-
-
-def is_pipe_already(iovalue):
-    # For files and file descriptors, we'll pass them directly to the
-    # subprocess module.
-    try:
-        # See if the value has a fileno. Non-file buffers like StringIO have
-        # the fileno method but throw UnsupportedOperation.
-        iovalue.fileno()
-        return True
-    except (AttributeError, io.UnsupportedOperation):
-        # If there's no fileno, also accept integer file descriptors.
-        return isinstance(iovalue, int) and iovalue >= 0
-
-
-@contextmanager
 def open_devnull(mode):
     # We open devnull ourselves because Python 2 doesn't support DEVNULL.
     with open(os.devnull, mode) as f:
@@ -468,13 +491,9 @@ def is_unicode(val):
     return isinstance(val, unicode_type)
 
 
-def could_be_path(val):
-    return is_bytes(val) or is_unicode(val) or isinstance(val, PurePath)
-
-
 @contextmanager
-def open_path(iovalue, mode):
-    with open(stringify_if_path(iovalue), mode) as f:
+def open_path(path_or_string, mode):
+    with open(stringify_if_path(path_or_string), mode) as f:
         yield f
 
 
@@ -517,7 +536,7 @@ def spawn_output_reader():
     thread.start()
     with write:
         # We yield the thread too, so that the caller can get the str/bytes
-        # iovalue it collects.
+        # it collects.
         yield write, thread
     thread.join()
 

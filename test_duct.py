@@ -190,7 +190,7 @@ def test_stdin():
         assert 'fbb' == out
     # with an open file
     with open(temp) as f:
-        out = replace('o', 'c').stdin(f).read()
+        out = replace('o', 'c').stdin_file(f).read()
         assert 'fcc' == out
     # with explicit DEVNULL
     out = replace('o', 'd').stdin_null().read()
@@ -212,13 +212,13 @@ def test_stdout():
     # with an open file
     temp = mktemp()
     with open(temp, 'w') as f:
-        sh('echo hi').stdout(f).run()
+        sh('echo hi').stdout_file(f).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
-    # with explicit DEVNULL
+    # to /dev/null
     out = sh('echo hi').stdout_null().read()
     assert '' == out
-    # to STDERR
+    # to stderr
     result = (sh('echo hi')
               .stdout_to_stderr()
               .stdout_capture()
@@ -226,18 +226,37 @@ def test_stdout():
               .run())
     assert b'' == result.stdout
     assert b'hi' + NEWLINE == result.stderr
-    # from stderr with STDOUT (note Windows would output any space before >)
-    result = (sh('echo hi>&2')
+
+
+def test_stderr():
+    # with a file path
+    temp = mktemp()
+    sh('echo hi').stdout_to_stderr().stderr(temp).run()
+    with open(temp) as f:
+        assert 'hi\n' == f.read()
+    # with a Path path
+    if has_pathlib:
+        temp = mktemp()
+        sh('echo hi').stdout_to_stderr().stderr(Path(temp)).run()
+        with open(temp) as f:
+            assert 'hi\n' == f.read()
+    # with an open file
+    temp = mktemp()
+    with open(temp, 'w') as f:
+        sh('echo hi').stdout_to_stderr().stderr_file(f).run()
+    with open(temp) as f:
+        assert 'hi\n' == f.read()
+    # to /dev/null
+    out = sh('echo hi').stdout_to_stderr().stderr_null().read()
+    assert '' == out
+    # to stdout
+    result = (sh('echo hi')
+              .stdout_to_stderr()
               .stderr_to_stdout()
               .stdout_capture()
               .stderr_capture()
               .run())
     assert b'hi' + NEWLINE == result.stdout
-    assert b'' == result.stderr
-    # Swapping both ends up with them joined (for better or worse).
-    result = (sh('echo hi&& echo lo>&2').stdout_to_stderr().stderr_to_stdout()
-              .stdout_capture().stderr_capture().run())
-    assert b'hi' + NEWLINE + b'lo' + NEWLINE == result.stdout
     assert b'' == result.stderr
 
 
