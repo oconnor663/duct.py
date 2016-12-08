@@ -43,6 +43,22 @@ execute paths in shell mode on Windows, where scripts have no Unix-style
 shebang and instead rely on the shell to figure out what their interpreter
 should be.
 
+## Consistent behavior for `dir`
+
+Windows and Unix take different approaches to setting a child process's cwd.
+The `CreateProcess` function on Windows takes a directory argument natively,
+while most Unix implementations do a `chdir` in between `fork` and `exec`.
+Unfortunately, those two approaches give different results when you have a
+_relative path_ to the child executable. On Windows the relative path is
+interpreted from the parent's cwd, but on Unix, because `chdir` happens before
+`exec`, it's interpreted relative to the child's.
+
+The Windows behavior is preferable, because it keeps the exe and cwd paths
+independent of each other, rather than making the caller remember the
+interaction between them. To guarantee that behavior, implementations need to
+canonicalize relative exe paths (in `cmd` only, not in `sh`) when the `dir`
+method is in use.
+
 ## Picking a shell
 
 Implementations should follow [Python's lead
