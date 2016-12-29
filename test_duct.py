@@ -2,6 +2,7 @@
 
 import binascii
 import os
+import sys
 import tempfile
 import textwrap
 
@@ -154,6 +155,27 @@ def test_dir():
     assert tmpdir == pwd().dir(tmpdir).dir(another).read()
     if has_pathlib:
         assert tmpdir == pwd().dir(Path(tmpdir)).read()
+
+
+def test_dir_with_relative_paths():
+    # We need to make sure relative exe paths are valid even when we're using
+    # `dir`. Subprocess spawning on Unix doesn't behave that way by default, so
+    # duct absolutifies relative paths in that case, and that's what we're
+    # testing here.
+    child_working_dir = tempfile.mkdtemp()
+    interpreter_path = sys.executable
+    interpreter_dir = os.path.dirname(interpreter_path)
+    interpreter_relative_path = os.path.join(
+            ".", os.path.basename(interpreter_path))
+    current_dir = os.getcwd()
+    try:
+        os.chdir(interpreter_dir)
+        # Run an empty Python program. This will succeed if the path to the
+        # interpreter is valid, but it will fail if the path is interpreted
+        # relative to the child's working dir.
+        cmd(interpreter_relative_path, "-c", "").dir(child_working_dir).run()
+    finally:
+        os.chdir(current_dir)
 
 
 def test_env():
