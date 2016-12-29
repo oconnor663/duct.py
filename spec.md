@@ -65,3 +65,14 @@ Implementations should follow [Python's lead
 here](https://docs.python.org/3/library/subprocess.html#popen-constructor). Use
 `/bin/sh` on POSIX systems and whatever's in the `COMSPEC` environment variable
 on Windows.
+
+## Inheritable pipes on Windows.
+
+Spawning child processes on Windows usually involves duplicating some pipes and
+making them inheritable. Unfortunately, that means that *any* child spawned on
+other threads while those pipes are alive will inherit them.
+(https://support.microsoft.com/kb/315939) Even if a given duct implementation
+doesn't use threads internally, it might get called from multiple threads at
+the same time. Duct implementations need to either make sure that the standard
+library they're built on uses a mutex to prevent bad inheritance (Rust), or use
+their own mutex internally as best effort (Python).
