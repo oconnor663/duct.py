@@ -94,6 +94,19 @@ def test_result():
     assert 0 == result.status
 
 
+def test_start():
+    handle1 = sh('echo one').stdout_capture().start()
+    handle2 = sh('echo two').stdout_capture().start()
+    result1 = handle1.wait()
+    result2 = handle2.wait()
+    assert b"one" + NEWLINE == result1.stdout
+    assert b"" == result1.stderr
+    assert 0 == result1.status
+    assert b"two" + NEWLINE == result2.stdout
+    assert b"" == result2.stderr
+    assert 0 == result2.status
+
+
 def test_bytes():
     out = head_bytes(10).input(b'\x00'*100).read()
     assert '\x00'*10 == out

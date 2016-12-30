@@ -46,6 +46,15 @@ class Expression(object):
         stdout_str = decode_with_universal_newlines(result.stdout)
         return stdout_str.rstrip('\n')
 
+    def start(self):
+        '''Equivalent to `run`, but instead of blocking the current thread,
+        return a WaitHandle that doesn't block until `wait` is called. This is
+        currently implemented with a simple background thread, though in theory
+        it could avoid using threads in most cases.'''
+        thread = ThreadWithReturn(self.run)
+        thread.start()
+        return WaitHandle(thread)
+
     def pipe(self, right_side):
         return Pipe(self, right_side)
 
@@ -113,6 +122,14 @@ class Expression(object):
 
     def __repr__(self):
         raise NotImplementedError  # pragma: no cover
+
+
+class WaitHandle:
+    def __init__(self, thread_handle):
+        self._thread_handle = thread_handle
+
+    def wait(self):
+        return self._thread_handle.join()
 
 
 Result = namedtuple('Result', ['status', 'stdout', 'stderr'])
