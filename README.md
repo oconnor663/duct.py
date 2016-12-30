@@ -159,6 +159,21 @@ output = sh("echo 日本語").read()
 assert output == u"日本語"
 ```
 
+#### `start`
+
+Start the expression running in the background and immediately return a
+`WaitHandle`. Calling `wait` on the handle waits for the expression to
+finish running and then returns a `Result`, so `start` followed by
+`wait` is equivalent to `run`.
+
+```python
+handle = sh("echo foo").stdout_capture().start()
+result = handle.wait()
+assert result.status == 0
+assert result.stdout == b"foo\n"
+assert result.stderr == b""
+```
+
 ### Pipe building methods
 
 #### `pipe`
