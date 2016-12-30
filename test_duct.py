@@ -128,6 +128,28 @@ def test_unchecked():
     assert output == "hi"
 
 
+def test_unchecked_with_pipe():
+    zero = exit_cmd(0)
+    one = exit_cmd(1)
+    two = exit_cmd(2)
+
+    # Right takes precedence over left.
+    result = one.pipe(two).unchecked().run()
+    assert result.status == 2
+
+    # But not if the right is unchecked.
+    result = one.pipe(two.unchecked()).unchecked().run()
+    assert result.status == 1
+
+    # But right takes precedence again if both are unchecked.
+    result = one.unchecked().pipe(two.unchecked()).run()
+    assert result.status == 2
+
+    # Unless the right status is 0.
+    result = one.unchecked().pipe(zero).run()
+    assert result.status == 1
+
+
 def test_pipe():
     out = head_bytes(3).pipe(replace('x', 'a')).input("xxxxxxxxxx").read()
     assert "aaa" == out
