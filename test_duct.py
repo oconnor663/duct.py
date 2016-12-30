@@ -118,10 +118,14 @@ def test_nonzero_status_throws():
 
 
 def test_unchecked():
-    assert 0 == false().unchecked().run().status
+    assert 1 == false().unchecked().run().status
     with raises(StatusError) as e:
         false().run()
-    assert e.value.result.status
+    assert e.value.result.status == 1
+
+    # Make sure unchecked errors don't short-circuit a `then`.
+    output = false().unchecked().then(sh("echo hi")).read()
+    assert output == "hi"
 
 
 def test_pipe():

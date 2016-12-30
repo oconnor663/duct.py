@@ -299,8 +299,19 @@ assert output == "1"
 
 #### `unchecked`
 
-Forces an expression to return `0` as its exit status. This can be used
-on the left side of `then`, to make sure the right side always executes.
+Prevents a non-zero exit status from short-circuiting [`then`]
+expressions or from causing [`run`] and friends to return an error. The
+unchecked exit code will still be there on the `Result` returned by
+`run`; its value doesn't change.
+
+"Uncheckedness" sticks to an exit code as it bubbles up through
+complicated expressions, but it doesn't "infect" other exit codes. So
+for example, if only one sub-expression in a pipe has `unchecked`, then
+errors returned by the other side will still be checked. That said, most
+commonly you'll just call `unchecked` right before `run`, and it'll
+apply to an entire expression. This sub-expression stuff doesn't usually
+come up unless you have a big pipeline built out of lots of different
+pieces.
 
 ```python
 # Raises a StatusError!

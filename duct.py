@@ -33,8 +33,8 @@ class Expression(object):
                 status = self._exec(context)
         stdout_bytes = stdout_thread.join()
         stderr_bytes = stderr_thread.join()
-        result = Result(status, stdout_bytes, stderr_bytes)
-        if status != 0:
+        result = Result(status.code, stdout_bytes, stderr_bytes)
+        if is_checked_error(status):
             raise StatusError(result, self)
         return result
 
@@ -162,7 +162,8 @@ class Cmd(Expression):
         proc = safe_popen(
             argv, cwd=context.dir, env=context.env, stdin=context.stdin,
             stdout=context.stdout, stderr=context.stderr)
-        return proc.wait()
+        code = proc.wait()
+        return ExecStatus(code=code, checked=True)
 
     def __repr__(self):
         argv = (self._prog,) + tuple(self._args)
@@ -179,7 +180,8 @@ class Sh(Expression):
         proc = safe_popen(
             self._shell_cmd, shell=True, cwd=context.dir, env=context.env,
             stdin=context.stdin, stdout=context.stdout, stderr=context.stderr)
-        return proc.wait()
+        code = proc.wait()
+        return ExecStatus(code=code, checked=True)
 
     def __repr__(self):
         return "sh({0})".format(repr(self._shell_cmd))
@@ -194,7 +196,7 @@ class Then(Expression):
         # Execute the first command.
         left_status = self._left._exec(context)
         # If it returns non-zero short-circuit.
-        if left_status != 0:
+        if is_checked_error(left_status):
             return left_status
         # Otherwise execute the second command.
         right_status = self._right._exec(context)
@@ -238,8 +240,14 @@ class Pipe(Expression):
             right_status = self._right._exec(right_context)
         left_status = left_thread.join()
 
-        # Return the rightmost error, if any.
-        if right_status != 0:
+        # Checked errors take precedence over unchecked errors, all errors take
+        # precedence over success, and all else being equal, right takes
+        # precedence over left.
+        if is_checked_error(right_status):
+            return right_status
+        elif is_checked_error(left_status):
+            return left_status
+        elif right_status.code != 0:
             return right_status
         else:
             return left_status
@@ -253,8 +261,8 @@ class Unchecked(Expression):
         self._inner = inner_expression
 
     def _exec(self, context):
-        self._inner._exec(context)
-        return 0
+        status = self._inner._exec(context)
+        return status._replace(checked=False)
 
     def __repr__(self):
         return "{0}.unchecked()".format(repr(self._inner))
@@ -492,6 +500,13 @@ def starter_iocontext(stdout_capture, stderr_capture):
         stdout_capture=stdout_capture,
         stderr_capture=stderr_capture,
     )
+
+
+ExecStatus = namedtuple("ExecStatus", ["code", "checked"])
+
+
+def is_checked_error(exec_status):
+    return exec_status.code != 0 and exec_status.checked
 
 
 @contextmanager
