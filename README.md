@@ -212,12 +212,12 @@ output = cmd("cat").input("stuff").read()
 assert output == "stuff"
 ```
 
-#### `stdin`, `stdin_null`
+#### `stdin`, `stdin_file`, `stdin_null`
 
 Redirects an expression's stdin to read from a file. The file can be a
-string/bytes/pathlib path to open at runtime, or an already open file or
-descriptor. `stdin_null` redirects stdin to `/dev/null` on Unix and
-`nul` on Windows.
+string/bytes/pathlib path to open at runtime, or with `stdin_file` an
+already open file or descriptor. `stdin_null` redirects stdin to
+`/dev/null` on Unix and `nul` on Windows.
 
 ```python
 cmd("cat").stdin("/etc/resolv.conf").run()
