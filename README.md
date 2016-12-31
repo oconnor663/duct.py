@@ -223,14 +223,14 @@ cmd("cat").stdin("/etc/resolv.conf").run()
 cmd("cat").stdin_null().run()
 ```
 
-#### `stdout`, `stdout_null`, `stdout_capture`, `stdout_to_stderr`
+#### `stdout`, `stdout_file`, `stdout_null`, `stdout_capture`, `stdout_to_stderr`
 
 Redirects an expression's stdout to write to a file. The file can by a
-string/bytes/pathlib path to open at runtime, or an already open file or
-descriptor. `stdout_null` redirects to `/dev/null` on Unix or `nul` on
-Windows. `stdout_capture` redirects to a pipe whose output bytes end up
-as `Result.stdout`. `stdout_to_stderr` replaces stdout with a copy of
-the stderr pipe.
+string/bytes/pathlib path to open at runtime, or with `stdout_file` an
+already open file or descriptor. `stdout_null` redirects to `/dev/null`
+on Unix or `nul` on Windows. `stdout_capture` redirects to a pipe whose
+output bytes end up as `Result.stdout`. `stdout_to_stderr` replaces
+stdout with a copy of the stderr pipe.
 
 ```python
 from duct import sh
@@ -244,7 +244,7 @@ result = sh("echo more stuff").stdout_capture().run()
 assert result.stdout == b"more stuff\n"
 ```
 
-#### `stderr`, `stderr_null`, `stderr_capture`, `stderr_to_stdout`
+#### `stderr`, `stderr_file`, `stderr_null`, `stderr_capture`, `stderr_to_stdout`
 
 Analogous to the `stdout` methods. `stderr_capture` redirects to a pipe
 whose output bytes end up as `Result.stderr`.
