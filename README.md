@@ -5,6 +5,7 @@ A Python library for shelling out. One of the goals of duct is to be
 easily portable to other languages, and there's a [Rust
 version](https://github.com/oconnor663/duct.rs) happening in parallel.
 
+[PyPI package](https://pypi.python.org/pypi/duct/)
 
 ## Easy things should be easy.
 
