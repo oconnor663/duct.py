@@ -66,13 +66,15 @@ here](https://docs.python.org/3/library/subprocess.html#popen-constructor). Use
 `/bin/sh` on POSIX systems and whatever's in the `COMSPEC` environment variable
 on Windows.
 
-## Inheritable pipes on Windows.
+## Inheritable pipes on Windows
 
 Spawning child processes on Windows usually involves duplicating some pipes and
 making them inheritable. Unfortunately, that means that *any* child spawned on
-other threads while those pipes are alive will inherit them.
-(https://support.microsoft.com/kb/315939) Even if a given duct implementation
+other threads while those pipes are alive will inherit them
+(https://support.microsoft.com/kb/315939). Even if a given duct implementation
 doesn't use threads internally, it might get called from multiple threads at
 the same time. Duct implementations need to either make sure that the standard
-library they're built on uses a mutex to prevent bad inheritance (Rust), or use
-their own mutex internally as best effort (Python).
+library they're built on uses a mutex to prevent bad inheritance ([as Rust
+does](https://github.com/rust-lang/rust/blob/1.14.0/src/libstd/sys/windows/process.rs#L169-L179)),
+or use their own mutex internally as best effort ([as we do in
+Python](https://github.com/oconnor663/duct.py/blob/0.5.0/duct.py#L676-L686)).
