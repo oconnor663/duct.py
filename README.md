@@ -300,10 +300,10 @@ assert output == "1"
 
 #### `unchecked`
 
-Prevents a non-zero exit status from short-circuiting [`then`]
-expressions or from causing [`run`] and friends to return an error. The
-unchecked exit code will still be there on the `Result` returned by
-`run`; its value doesn't change.
+Prevents a non-zero exit status from short-circuiting `then` expressions
+or from causing `run` and friends to return an error. The unchecked exit
+code will still be there on the `Result` returned by `run`; its value
+doesn't change.
 
 "Uncheckedness" sticks to an exit code as it bubbles up through
 complicated expressions, but it doesn't "infect" other exit codes. So
