@@ -78,3 +78,39 @@ library they're built on uses a mutex to prevent bad inheritance ([as Rust
 does](https://github.com/rust-lang/rust/blob/1.14.0/src/libstd/sys/windows/process.rs#L169-L179)),
 or use their own mutex internally as best effort ([as we do in
 Python](https://github.com/oconnor663/duct.py/blob/0.5.0/duct.py#L676-L686)).
+
+## Supporting kill and wait at the same time
+
+On Unix (though not Windows) there's a race condition between `kill` and
+`waitpid`. If a process exits right before you signal it, a waiting thread
+might clean it up and free its PID, and an unrelated process could immediately
+reuse that PID. It's not likely, but all of that could happen before the
+waiting thread has a chance to make a note of it, and so the killing thread
+might end up killing that unrelated process. This race condition is why the
+Rust standard library [doesn't allow shared access to child
+processes](https://doc.rust-lang.org/std/process/struct.Child.html#method.kill).
+
+It's possible to avoid this race however, using a newer POSIX function called
+`waitid`. That function has a `WNOWAIT` flag that leaves the child in its
+zombie state, so that its PID isn't freed for reuse. That gives the waiting
+thread a chance to block further kills, before cleaning up the child properly.
+The [`shared_child` crate](https://github.com/oconnor663/shared_child.rs) is an
+example implementation using `waitid`.
+
+Duct implementations should prefer this strategy over plain `waitpid`, for two
+reasons. First, shared access is a nice feature. But more importantly,
+languages other than Rust aren't very good at preventing shared access. It's
+much better to make the library safe, than to hope the user reads the docs
+about the ways its unsafe.
+
+Another way to prevent this race would be to use only nonblocking waits, so
+that kill and wait could take the same locks. However, that requires one of two
+approaches: either we'd need to listen for `SIGCHLD` to know when a child has
+exited, or we'd need to wait and sleep in a loop. The signal approach assumes
+we own the current process's signal handlers, which isn't always true. (If
+Python calls out to a Rust library, for example, the Rust code can't set signal
+handlers without unsetting Python's.) The sleep loop approach works for most
+cases, using short sleeps that grow over time, but it causes a potentially long
+delay after the end of a long-running child, which isn't always acceptable.
+Frequent wakeups can also hurt battery life. The `waitid` approach above avoids
+these problems.
