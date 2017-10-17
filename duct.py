@@ -451,7 +451,8 @@ class Dir(IORedirectExpression):
 class Env(IORedirectExpression):
     def __init__(self, inner, name, val):
         super(Env, self).__init__(inner, "env", [name, val])
-        self._name = name
+        # Windows needs special handling of env var names.
+        self._name = convert_env_var_name(name)
         self._val = stringify_if_path(val)
 
     @contextmanager
@@ -466,7 +467,8 @@ class Env(IORedirectExpression):
 class EnvRemove(IORedirectExpression):
     def __init__(self, inner, name):
         super(EnvRemove, self).__init__(inner, "env_remove", [name])
-        self._name = name
+        # Windows needs special handling of env var names.
+        self._name = convert_env_var_name(name)
 
     @contextmanager
     def _update_context(self, context):
@@ -479,7 +481,9 @@ class EnvRemove(IORedirectExpression):
 class FullEnv(IORedirectExpression):
     def __init__(self, inner, env_dict):
         super(FullEnv, self).__init__(inner, "full_env", [env_dict])
-        self._env_dict = env_dict
+        # Windows needs special handling of env var names.
+        self._env_dict = dict((convert_env_var_name(k), v)
+                              for (k, v) in env_dict.items())
 
     @contextmanager
     def _update_context(self, context):
@@ -712,3 +716,17 @@ def decode_with_universal_newlines(b):
 
 def encode_with_universal_newlines(s):
     return s.replace('\n', os.linesep).encode('utf8')
+
+
+def convert_env_var_name(var):
+    '''Environment variables are case-insensitive on Windows. To deal with
+    that, Python on Windows converts all the keys in os.environ to uppercase
+    internally. That's mostly transparent when we deal with os.environ
+    directly, but when we call os.environ.copy(), we get a regular dictionary
+    with all the keys uppercased. We need to do a similar conversion, or else
+    additions and removals in that copy won't interact properly with the
+    inherited parent environment.'''
+
+    if os.name == 'nt':
+        return var.upper()
+    return var

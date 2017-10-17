@@ -227,7 +227,9 @@ def test_env():
 def test_env_remove():
     assert "foo" == echo_x().env('x', 'foo').env_remove('x').read()
     assert "" == echo_x().env_remove('x').env('x', 'foo').read()
-    # Make sure the parent environment gets filtered too.
+    # Make sure the parent environment gets filtered too. Note that this also
+    # exercises our case handling on Windows. The "x" gets converted to "X"
+    # internally, as it does in the Python interpreter.
     os.environ["x"] = "waa"
     assert "waa" == echo_x().read()
     assert "" == echo_x().env_remove('x').read()
