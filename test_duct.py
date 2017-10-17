@@ -53,12 +53,16 @@ def pwd():
     return cmd('python', '-c', 'import os; print(os.getcwd())')
 
 
-def echo_x():
+def echo_var(var_name):
     code = textwrap.dedent('''\
         import os
-        print(os.environ.get("x", ""))
-        ''')
+        print(os.environ.get("{0}", ""))
+        '''.format(var_name))
     return cmd('python', '-c', code)
+
+
+def echo_x():
+    return echo_var("x")
 
 
 def replace(a, b):
@@ -239,9 +243,10 @@ def test_env_remove():
 def test_full_env():
     # Wrap echo to preserve the SYSTEMROOT variable on Windows. Without this,
     # basic Python features like `import os` will fail.
-    clear_env = {}
+    clear_env = {"foo": "bar"}
     if os.name == "nt":
         clear_env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+    assert "bar" == echo_var("foo").full_env(clear_env).read()
     assert "" == echo_x().full_env(clear_env).env('x', 'foo').read()
 
 
