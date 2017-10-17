@@ -114,3 +114,22 @@ cases, using short sleeps that grow over time, but it causes a potentially long
 delay after the end of a long-running child, which isn't always acceptable.
 Frequent wakeups can also hurt battery life. The `waitid` approach above avoids
 these problems.
+
+## Case-insensitive environment variables on Windows
+
+Environment variables on Windows are added and deleted in a case-insensitive
+way. We usually don't care about it this *until* we copy the entire environment
+into a dictionary. *Then* we will find that the keys in our dictionary have
+been uppercased (probably), and trying to edit or delete them with their
+lowercase names no longer has the right effect. The right thing to do here will
+depend on the specifics of each language and how it talks to the environment,
+but the core requirement is that something like this must work:
+
+```python
+import os
+# Set a lowercase variable in the parent environment.
+os.environ["foo"] = "bar"
+# Run a duct command that clears that same variable.
+# This command MUST NOT see the variable "foo" or (on Windows) "FOO".
+cmd("my_cmd.sh").env_remove("foo").run()
+```
