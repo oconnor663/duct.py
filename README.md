@@ -279,6 +279,18 @@ output = sh("echo $FOO").env("FOO", "bar").read()
 assert output == "bar"
 ```
 
+#### `env_remove`
+
+Unsets an environment variable for an expression, whether it's from the
+parent environment, or from an exterior (but not interior) call to
+`env`.
+
+```python
+os.environ["FOO"] = "bar"
+output = sh("echo $FOO").env_remove("FOO").read()
+assert output == ""
+```
+
 #### `full_env`
 
 Sets the entire environment for an expression, so that nothing is

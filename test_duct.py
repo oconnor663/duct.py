@@ -224,6 +224,16 @@ def test_env():
         assert "foo" == echo_x().env('x', Path('foo')).read()
 
 
+def test_env_remove():
+    assert "foo" == echo_x().env('x', 'foo').env_remove('x').read()
+    assert "" == echo_x().env_remove('x').env('x', 'foo').read()
+    # Make sure the parent environment gets filtered too.
+    os.environ["x"] = "waa"
+    assert "waa" == echo_x().read()
+    assert "" == echo_x().env_remove('x').read()
+    del os.environ["x"]
+
+
 def test_full_env():
     # Wrap echo to preserve the SYSTEMROOT variable on Windows. Without this,
     # basic Python features like `import os` will fail.

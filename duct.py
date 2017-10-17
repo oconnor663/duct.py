@@ -109,6 +109,9 @@ class Expression(object):
     def env(self, name, val):
         return Env(self, name, val)
 
+    def env_remove(self, name):
+        return EnvRemove(self, name)
+
     def full_env(self, env_dict):
         return FullEnv(self, env_dict)
 
@@ -457,6 +460,19 @@ class Env(IORedirectExpression):
         # dictionary instead of modifying it in place.
         new_env = context.env.copy()
         new_env[self._name] = self._val
+        yield context._replace(env=new_env)
+
+
+class EnvRemove(IORedirectExpression):
+    def __init__(self, inner, name):
+        super(EnvRemove, self).__init__(inner, "env_remove", [name])
+        self._name = name
+
+    @contextmanager
+    def _update_context(self, context):
+        # As above, don't modify the dictionary.
+        new_env = context.env.copy()
+        new_env.pop(self._name, None)
         yield context._replace(env=new_env)
 
 
