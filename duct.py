@@ -161,15 +161,19 @@ class Cmd(Expression):
         prog_str = stringify_with_dot_if_path(self._prog)
         maybe_absolute_prog = maybe_canonicalize_exe_path(prog_str, context)
         args_strs = tuple(stringify_if_path(arg) for arg in self._args)
-        argv = (maybe_absolute_prog,) + args_strs
+        argv = (maybe_absolute_prog, ) + args_strs
         proc = safe_popen(
-            argv, cwd=context.dir, env=context.env, stdin=context.stdin,
-            stdout=context.stdout, stderr=context.stderr)
+            argv,
+            cwd=context.dir,
+            env=context.env,
+            stdin=context.stdin,
+            stdout=context.stdout,
+            stderr=context.stderr)
         code = proc.wait()
         return ExecStatus(code=code, checked=True)
 
     def __repr__(self):
-        argv = (self._prog,) + tuple(self._args)
+        argv = (self._prog, ) + tuple(self._args)
         return 'cmd({0})'.format(', '.join(repr(arg) for arg in argv))
 
 
@@ -181,8 +185,13 @@ class Sh(Expression):
 
     def _exec(self, context):
         proc = safe_popen(
-            self._shell_cmd, shell=True, cwd=context.dir, env=context.env,
-            stdin=context.stdin, stdout=context.stdout, stderr=context.stderr)
+            self._shell_cmd,
+            shell=True,
+            cwd=context.dir,
+            env=context.env,
+            stdin=context.stdin,
+            stdout=context.stdout,
+            stderr=context.stderr)
         code = proc.wait()
         return ExecStatus(code=code, checked=True)
 
@@ -236,6 +245,7 @@ class Pipe(Expression):
         def do_left():
             with write_pipe:
                 return self._left._exec(left_context)
+
         left_thread = ThreadWithReturn(target=do_left)
         left_thread.start()
 
@@ -482,8 +492,8 @@ class FullEnv(IORedirectExpression):
     def __init__(self, inner, env_dict):
         super(FullEnv, self).__init__(inner, "full_env", [env_dict])
         # Windows needs special handling of env var names.
-        self._env_dict = dict((convert_env_var_name(k), v)
-                              for (k, v) in env_dict.items())
+        self._env_dict = dict(
+            (convert_env_var_name(k), v) for (k, v) in env_dict.items())
 
     @contextmanager
     def _update_context(self, context):
@@ -572,6 +582,7 @@ def spawn_input_writer(input_bytes):
                 write.write(input_bytes)
             except PIPE_CLOSED_ERROR:
                 pass
+
     thread = ThreadWithReturn(write_thread)
     thread.start()
     with read:
@@ -619,6 +630,7 @@ class ThreadWithReturn(threading.Thread):
     value of the target function, or to see any exceptions that might've gotten
     thrown. This is a thin wrapper around Thread that enhances the join
     function to return values and reraise exceptions.'''
+
     def __init__(self, target, args=(), kwargs=None, **thread_kwargs):
         threading.Thread.__init__(self, **thread_kwargs)
         self._target = target
@@ -673,8 +685,8 @@ def maybe_canonicalize_exe_path(exe_name, iocontext):
     thing Windows users have to watch out for instead is local files shadowing
     global program names, which I don't think we can or should prevent.)'''
 
-    has_sep = (os.path.sep in exe_name or
-               (os.path.altsep is not None and os.path.altsep in exe_name))
+    has_sep = (os.path.sep in exe_name
+               or (os.path.altsep is not None and os.path.altsep in exe_name))
 
     if has_sep and iocontext.dir is not None and not os.path.isabs(exe_name):
         return os.path.realpath(exe_name)

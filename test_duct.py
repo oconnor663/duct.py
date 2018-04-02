@@ -19,9 +19,9 @@ except ImportError:
 
 NEWLINE = os.linesep.encode()
 
-
 # Windows-compatible commands to mimic Unix
 # -----------------------------------------
+
 
 def exit_cmd(n):
     return cmd('python', '-c', 'import sys; sys.exit({0})'.format(n))
@@ -77,6 +77,7 @@ def replace(a, b):
 # utilities
 # ---------
 
+
 def mktemp():
     fd, path = tempfile.mkstemp()
     os.close(fd)
@@ -85,6 +86,7 @@ def mktemp():
 
 # tests
 # -----
+
 
 def test_hello_world():
     out = sh('echo hello world').read()
@@ -112,8 +114,8 @@ def test_start():
 
 
 def test_bytes():
-    out = head_bytes(10).input(b'\x00'*100).read()
-    assert '\x00'*10 == out
+    out = head_bytes(10).input(b'\x00' * 100).read()
+    assert '\x00' * 10 == out
 
 
 def test_nonzero_status_throws():
@@ -209,7 +211,7 @@ def test_dir_with_relative_paths():
     interpreter_path = sys.executable
     interpreter_dir = os.path.dirname(interpreter_path)
     interpreter_relative_path = os.path.join(
-            ".", os.path.basename(interpreter_path))
+        ".", os.path.basename(interpreter_path))
     current_dir = os.getcwd()
     try:
         os.chdir(interpreter_dir)
@@ -297,11 +299,8 @@ def test_stdout():
     out = sh('echo hi').stdout_null().read()
     assert '' == out
     # to stderr
-    result = (sh('echo hi')
-              .stdout_to_stderr()
-              .stdout_capture()
-              .stderr_capture()
-              .run())
+    result = (sh('echo hi').stdout_to_stderr().stdout_capture()
+              .stderr_capture().run())
     assert b'' == result.stdout
     assert b'hi' + NEWLINE == result.stderr
 
@@ -328,12 +327,8 @@ def test_stderr():
     out = sh('echo hi').stdout_to_stderr().stderr_null().read()
     assert '' == out
     # to stdout
-    result = (sh('echo hi')
-              .stdout_to_stderr()
-              .stderr_to_stdout()
-              .stdout_capture()
-              .stderr_capture()
-              .run())
+    result = (sh('echo hi').stdout_to_stderr().stderr_to_stdout()
+              .stdout_capture().stderr_capture().run())
     assert b'hi' + NEWLINE == result.stdout
     assert b'' == result.stderr
 
@@ -381,6 +376,7 @@ def test_checked_error_contains_status():
 def test_ThreadWithReturn_reraises_exceptions():
     def t():
         raise ZeroDivisionError
+
     thread = duct.ThreadWithReturn(t)
     thread.start()
     with raises(ZeroDivisionError):
