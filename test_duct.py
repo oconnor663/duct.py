@@ -41,6 +41,10 @@ def cat_cmd():
         'import sys, shutil; shutil.copyfileobj(sys.stdin, sys.stdout)')
 
 
+def echo_cmd(s):
+    return cmd('python', '-c', 'import sys; print(" ".join(sys.argv[1:]))', s)
+
+
 def head_bytes(c):
     code = textwrap.dedent('''\
         import os
@@ -95,20 +99,20 @@ def mktemp():
 
 
 def test_hello_world():
-    out = cmd("echo", "hello world").read()
+    out = echo_cmd("hello world").read()
     assert "hello world" == out
 
 
 def test_result():
-    result = cmd("echo", "more stuff").stdout_capture().run()
+    result = echo_cmd("more stuff").stdout_capture().run()
     assert b"more stuff" + NEWLINE == result.stdout
     assert b"" == result.stderr
     assert 0 == result.status
 
 
 def test_start():
-    handle1 = cmd("echo", "one").stdout_capture().start()
-    handle2 = cmd("echo", "two").stdout_capture().start()
+    handle1 = echo_cmd("one").stdout_capture().start()
+    handle2 = echo_cmd("two").stdout_capture().start()
     result1 = handle1.wait()
     result2 = handle2.wait()
     assert b"one" + NEWLINE == result1.stdout
@@ -181,7 +185,7 @@ def test_pipe_SIGPIPE():
 
 def test_nesting():
     inner = cat_cmd().pipe(replace('i', 'o'))
-    out = cmd("echo", "hi").pipe(inner).read()
+    out = echo_cmd("hi").pipe(inner).read()
     assert 'ho' == out
 
 
@@ -275,23 +279,23 @@ def test_stdin():
 def test_stdout():
     # with a file path
     temp = mktemp()
-    cmd("echo", "hi").stdout(temp).run()
+    echo_cmd("hi").stdout(temp).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with a Path path
     if has_pathlib:
         temp = mktemp()
-        cmd("echo", "hi").stdout(Path(temp)).run()
+        echo_cmd("hi").stdout(Path(temp)).run()
         with open(temp) as f:
             assert 'hi\n' == f.read()
     # with an open file
     temp = mktemp()
     with open(temp, 'w') as f:
-        cmd("echo", "hi").stdout_file(f).run()
+        echo_cmd("hi").stdout_file(f).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # to /dev/null
-    out = cmd("echo", "hi").stdout_null().read()
+    out = echo_cmd("hi").stdout_null().read()
     assert '' == out
     # to stderr
     result = (cmd(
@@ -304,26 +308,26 @@ def test_stdout():
 def test_stderr():
     # with a file path
     temp = mktemp()
-    cmd("echo", "hi").stdout_to_stderr().stderr(temp).run()
+    echo_cmd("hi").stdout_to_stderr().stderr(temp).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with a Path path
     if has_pathlib:
         temp = mktemp()
-        cmd("echo", "hi").stdout_to_stderr().stderr(Path(temp)).run()
+        echo_cmd("hi").stdout_to_stderr().stderr(Path(temp)).run()
         with open(temp) as f:
             assert 'hi\n' == f.read()
     # with an open file
     temp = mktemp()
     with open(temp, 'w') as f:
-        cmd("echo", "hi").stdout_to_stderr().stderr_file(f).run()
+        echo_cmd("hi").stdout_to_stderr().stderr_file(f).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # to /dev/null
-    out = cmd("echo", "hi").stdout_to_stderr().stderr_null().read()
+    out = echo_cmd("hi").stdout_to_stderr().stderr_null().read()
     assert '' == out
     # to stdout
-    result = (cmd("echo", "hi").stdout_to_stderr().stderr_to_stdout().
+    result = (echo_cmd("hi").stdout_to_stderr().stderr_to_stdout().
               stdout_capture().stderr_capture().run())
     assert b'hi' + NEWLINE == result.stdout
     assert b'' == result.stderr
@@ -401,7 +405,7 @@ def test_write_error_in_input_thread():
 def test_string_mode_returns_unicode():
     '''In Python 2, reading a file in text mode still returns a raw string,
     instead of a unicode string. Make sure we convert.'''
-    out = cmd("echo", "hi").read()
+    out = echo_cmd("hi").read()
     assert isinstance(out, type(u''))
 
 
@@ -427,7 +431,7 @@ def test_swap_and_redirect_at_same_time():
     '''We need to make sure that doing e.g. stderr_to_stdout while also doing
     stdout_capture means that stderr joins the redirected stdout, rather than
     joining what stdout used to be.'''
-    err_out = cmd("echo", "hi").stdout_to_stderr().stderr_to_stdout().read()
+    err_out = echo_cmd("hi").stdout_to_stderr().stderr_to_stdout().read()
     assert err_out == 'hi'
 
 
