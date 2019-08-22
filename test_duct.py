@@ -298,8 +298,7 @@ def test_stdout():
     out = echo_cmd("hi").stdout_null().read()
     assert '' == out
     # to stderr
-    result = (cmd(
-        "echo",
+    result = (echo_cmd(
         "hi").stdout_to_stderr().stdout_capture().stderr_capture().run())
     assert b'' == result.stdout
     assert b'hi' + NEWLINE == result.stderr
