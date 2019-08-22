@@ -34,12 +34,12 @@ run(["git", "log", current_branch], check=True)
 ```
 
 
-## Crazy things should be possible.
+## Fancy things should be possible.
 
-Sometimes you have to write ridiculous pipelines in bash:
+Sometimes you have to write complicated pipelines in bash:
 
 ```bash
-(echo error >&2 && echo output) 2>&1 | grep stuff
+foo 2>&1 | (cat || true) | head -n 10
 ```
 
 The duct version is longer, but duct expressions are composable objects,
@@ -48,33 +48,26 @@ so we can build the whole command piece-by-piece:
 ```python
 from duct import cmd
 
-echoes = cmd("echo", "error").stdout_to_stderr().then(cmd("echo", "output"))
-pipeline = echoes.stderr_to_stdout().pipe(cmd("grep", "stuff"))
-pipeline.run()  # This will raise an exception! See below.
+foo = cmd("foo").stdout_to_stderr()
+cat = cmd("cat").unchecked()
+head = cmd("head", "-n", "10")
+foo.pipe(cat).pipe(head).run()
 ```
 
 
 ## Errors should never pass silently.
 
-Because `grep` in the example above doesn't match any lines, it's going
-to return an error code, and duct will raise an exception. To ignore the
-error, you can use `unchecked`:
+If a command returns an error code, duct will raise an exception:
+
+```python
+cmd("false").run()  # Raises an exception.
+```
+
+To ignore the error, you can use `unchecked`:
 
 ```python
 result = cmd("false").unchecked().run()
-print(result.status)  # 0
-```
-
-If you need to know the value of a non-zero exit status, you can catch
-the exception it raises and inspect it like this.
-
-```python
-from duct import cmd, StatusError
-
-try:
-    cmd("false").run()
-except StatusError as e:
-    print(e.result.status)  # 1
+assert result.status == 1
 ```
 
 Note that duct treats errors in a pipe like bash's `pipefail` option:

@@ -35,6 +35,12 @@ def false():
     return exit_cmd(1)
 
 
+def cat_cmd():
+    return cmd(
+        'python', '-c',
+        'import sys, shutil; shutil.copyfileobj(sys.stdin, sys.stdout)')
+
+
 def head_bytes(c):
     code = textwrap.dedent('''\
         import os
@@ -129,10 +135,6 @@ def test_unchecked():
         false().run()
     assert e.value.result.status == 1
 
-    # Make sure unchecked errors don't short-circuit a `then`.
-    output = false().unchecked().then(cmd("echo", "hi")).read()
-    assert output == "hi"
-
 
 def test_unchecked_with_pipe():
     zero = exit_cmd(0)
@@ -177,16 +179,9 @@ def test_pipe_SIGPIPE():
     assert "00000" == out
 
 
-def test_then():
-    print_a = cmd('python', '-c', 'print("A")')
-    assert 'A' == true().then(print_a).read()
-    assert '' == false().then(print_a).unchecked().read()
-
-
 def test_nesting():
-    innermost = true().then(replace('i', 'o'))
-    middle = true().then(innermost)
-    out = cmd("echo", "hi").pipe(middle).read()
+    inner = cat_cmd().pipe(replace('i', 'o'))
+    out = cmd("echo", "hi").pipe(inner).read()
     assert 'ho' == out
 
 
@@ -420,7 +415,6 @@ def test_repr_round_trip():
     expressions = [
         "cmd('foo').unchecked().env('a', 'b').full_env({})",
         "cmd('foo').pipe(cmd('bar'))",
-        "cmd('foo').then(cmd('bar'))",
         "cmd('foo').stdout_null().stdout_to_stderr()",
         "cmd('foo').stderr_null().stderr_to_stdout()",
         "cmd('foo').dir('stuff')",

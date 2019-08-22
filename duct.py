@@ -54,9 +54,6 @@ class Expression(object):
     def pipe(self, right_side):
         return Pipe(self, right_side)
 
-    def then(self, right_side):
-        return Then(self, right_side)
-
     def input(self, buf):
         return Input(self, buf)
 
@@ -170,25 +167,6 @@ class Cmd(Expression):
     def __repr__(self):
         argv = (self._prog, ) + tuple(self._args)
         return 'cmd({0})'.format(', '.join(repr(arg) for arg in argv))
-
-
-class Then(Expression):
-    def __init__(self, left, right):
-        self._left = left
-        self._right = right
-
-    def _exec(self, context):
-        # Execute the first command.
-        left_status = self._left._exec(context)
-        # If it returns non-zero short-circuit.
-        if is_checked_error(left_status):
-            return left_status
-        # Otherwise execute the second command.
-        right_status = self._right._exec(context)
-        return right_status
-
-    def __repr__(self):
-        return "{0}.then({1})".format(repr(self._left), repr(self._right))
 
 
 # Pipe uses another thread to run the left side of the pipe in parallel with
