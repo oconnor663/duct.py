@@ -9,7 +9,7 @@ import textwrap
 from pytest import raises, mark
 
 import duct
-from duct import cmd, sh, StatusError
+from duct import cmd, StatusError
 
 try:
     from pathlib import Path
@@ -89,20 +89,20 @@ def mktemp():
 
 
 def test_hello_world():
-    out = sh('echo hello world').read()
+    out = cmd("echo", "hello world").read()
     assert "hello world" == out
 
 
 def test_result():
-    result = sh('echo more stuff').stdout_capture().run()
+    result = cmd("echo", "more stuff").stdout_capture().run()
     assert b"more stuff" + NEWLINE == result.stdout
     assert b"" == result.stderr
     assert 0 == result.status
 
 
 def test_start():
-    handle1 = sh('echo one').stdout_capture().start()
-    handle2 = sh('echo two').stdout_capture().start()
+    handle1 = cmd("echo", "one").stdout_capture().start()
+    handle2 = cmd("echo", "two").stdout_capture().start()
     result1 = handle1.wait()
     result2 = handle2.wait()
     assert b"one" + NEWLINE == result1.stdout
@@ -130,7 +130,7 @@ def test_unchecked():
     assert e.value.result.status == 1
 
     # Make sure unchecked errors don't short-circuit a `then`.
-    output = false().unchecked().then(sh("echo hi")).read()
+    output = false().unchecked().then(cmd("echo", "hi")).read()
     assert output == "hi"
 
 
@@ -186,7 +186,7 @@ def test_then():
 def test_nesting():
     innermost = true().then(replace('i', 'o'))
     middle = true().then(innermost)
-    out = sh('echo hi').pipe(middle).read()
+    out = cmd("echo", "hi").pipe(middle).read()
     assert 'ho' == out
 
 
@@ -280,27 +280,28 @@ def test_stdin():
 def test_stdout():
     # with a file path
     temp = mktemp()
-    sh('echo hi').stdout(temp).run()
+    cmd("echo", "hi").stdout(temp).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with a Path path
     if has_pathlib:
         temp = mktemp()
-        sh('echo hi').stdout(Path(temp)).run()
+        cmd("echo", "hi").stdout(Path(temp)).run()
         with open(temp) as f:
             assert 'hi\n' == f.read()
     # with an open file
     temp = mktemp()
     with open(temp, 'w') as f:
-        sh('echo hi').stdout_file(f).run()
+        cmd("echo", "hi").stdout_file(f).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # to /dev/null
-    out = sh('echo hi').stdout_null().read()
+    out = cmd("echo", "hi").stdout_null().read()
     assert '' == out
     # to stderr
-    result = (sh('echo hi').stdout_to_stderr().stdout_capture()
-              .stderr_capture().run())
+    result = (cmd(
+        "echo",
+        "hi").stdout_to_stderr().stdout_capture().stderr_capture().run())
     assert b'' == result.stdout
     assert b'hi' + NEWLINE == result.stderr
 
@@ -308,27 +309,27 @@ def test_stdout():
 def test_stderr():
     # with a file path
     temp = mktemp()
-    sh('echo hi').stdout_to_stderr().stderr(temp).run()
+    cmd("echo", "hi").stdout_to_stderr().stderr(temp).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with a Path path
     if has_pathlib:
         temp = mktemp()
-        sh('echo hi').stdout_to_stderr().stderr(Path(temp)).run()
+        cmd("echo", "hi").stdout_to_stderr().stderr(Path(temp)).run()
         with open(temp) as f:
             assert 'hi\n' == f.read()
     # with an open file
     temp = mktemp()
     with open(temp, 'w') as f:
-        sh('echo hi').stdout_to_stderr().stderr_file(f).run()
+        cmd("echo", "hi").stdout_to_stderr().stderr_file(f).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # to /dev/null
-    out = sh('echo hi').stdout_to_stderr().stderr_null().read()
+    out = cmd("echo", "hi").stdout_to_stderr().stderr_null().read()
     assert '' == out
     # to stdout
-    result = (sh('echo hi').stdout_to_stderr().stderr_to_stdout()
-              .stdout_capture().stderr_capture().run())
+    result = (cmd("echo", "hi").stdout_to_stderr().stderr_to_stdout().
+              stdout_capture().stderr_capture().run())
     assert b'hi' + NEWLINE == result.stdout
     assert b'' == result.stderr
 
@@ -346,7 +347,6 @@ def test_commands_can_be_paths():
         f.write('echo some stuff\n')
     path.chmod(0o755)
     assert 'some stuff' == cmd(path).read()
-    assert 'some stuff' == sh(path).read()
 
 
 def test_pipe_returns_rightmost_error():
@@ -406,7 +406,7 @@ def test_write_error_in_input_thread():
 def test_string_mode_returns_unicode():
     '''In Python 2, reading a file in text mode still returns a raw string,
     instead of a unicode string. Make sure we convert.'''
-    out = sh('echo hi').read()
+    out = cmd("echo", "hi").read()
     assert isinstance(out, type(u''))
 
 
@@ -419,11 +419,8 @@ def test_repr_round_trip():
 
     expressions = [
         "cmd('foo').unchecked().env('a', 'b').full_env({})",
-        "sh('bar').stdin_null().input('')",
         "cmd('foo').pipe(cmd('bar'))",
-        "cmd('foo').pipe(sh('bar'))",
         "cmd('foo').then(cmd('bar'))",
-        "cmd('foo').then(sh('bar'))",
         "cmd('foo').stdout_null().stdout_to_stderr()",
         "cmd('foo').stderr_null().stderr_to_stdout()",
         "cmd('foo').dir('stuff')",
@@ -436,7 +433,7 @@ def test_swap_and_redirect_at_same_time():
     '''We need to make sure that doing e.g. stderr_to_stdout while also doing
     stdout_capture means that stderr joins the redirected stdout, rather than
     joining what stdout used to be.'''
-    err_out = sh('echo hi>&2').stderr_to_stdout().read()
+    err_out = cmd("echo", "hi").stdout_to_stderr().stderr_to_stdout().read()
     assert err_out == 'hi'
 
 
@@ -466,7 +463,6 @@ def test_run_local_path():
             f.write(code)
         script_path.chmod(0o755)
         assert 'foo' == cmd(script_path).read()
-        assert 'foo' == sh(script_path).read()
     finally:
         script_path.unlink()
 
@@ -484,8 +480,6 @@ def test_local_path_doesnt_match_PATH():
     assert not echo_path.exists(), 'This path is supposed to be nonexistent.'
     with raises(PROGRAM_NOT_FOUND_ERROR):
         cmd(echo_path).run()
-    with raises(duct.StatusError):
-        sh(echo_path).run()
 
 
 def test_unicode():

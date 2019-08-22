@@ -16,10 +16,6 @@ def cmd(prog, *args):
     return Cmd(prog, args)
 
 
-def sh(shell_str):
-    return Sh(shell_str)
-
-
 class Expression(object):
     'Abstract base class for all expression types.'
 
@@ -162,41 +158,18 @@ class Cmd(Expression):
         maybe_absolute_prog = maybe_canonicalize_exe_path(prog_str, context)
         args_strs = tuple(stringify_if_path(arg) for arg in self._args)
         argv = (maybe_absolute_prog, ) + args_strs
-        proc = safe_popen(
-            argv,
-            cwd=context.dir,
-            env=context.env,
-            stdin=context.stdin,
-            stdout=context.stdout,
-            stderr=context.stderr)
+        proc = safe_popen(argv,
+                          cwd=context.dir,
+                          env=context.env,
+                          stdin=context.stdin,
+                          stdout=context.stdout,
+                          stderr=context.stderr)
         code = proc.wait()
         return ExecStatus(code=code, checked=True)
 
     def __repr__(self):
         argv = (self._prog, ) + tuple(self._args)
         return 'cmd({0})'.format(', '.join(repr(arg) for arg in argv))
-
-
-class Sh(Expression):
-    def __init__(self, shell_cmd):
-        # The command could be a Path. This is potentially useful on Windows
-        # where you have to run things like .py files in shell mode.
-        self._shell_cmd = stringify_with_dot_if_path(shell_cmd)
-
-    def _exec(self, context):
-        proc = safe_popen(
-            self._shell_cmd,
-            shell=True,
-            cwd=context.dir,
-            env=context.env,
-            stdin=context.stdin,
-            stdout=context.stdout,
-            stderr=context.stderr)
-        code = proc.wait()
-        return ExecStatus(code=code, checked=True)
-
-    def __repr__(self):
-        return "sh({0})".format(repr(self._shell_cmd))
 
 
 class Then(Expression):
@@ -292,8 +265,8 @@ class IORedirectExpression(Expression):
             return self._inner._exec(updated_context)
 
     def __repr__(self):
-        return "{0}.{1}({2})".format(
-            repr(self._inner), self._method_name, self._method_args)
+        return "{0}.{1}({2})".format(repr(self._inner), self._method_name,
+                                     self._method_args)
 
     # Implemented by subclasses.
 
@@ -630,7 +603,6 @@ class ThreadWithReturn(threading.Thread):
     value of the target function, or to see any exceptions that might've gotten
     thrown. This is a thin wrapper around Thread that enhances the join
     function to return values and reraise exceptions.'''
-
     def __init__(self, target, args=(), kwargs=None, **thread_kwargs):
         threading.Thread.__init__(self, **thread_kwargs)
         self._target = target

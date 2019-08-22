@@ -12,13 +12,13 @@ version](https://github.com/oconnor663/duct.rs) happening in parallel.
 But always be explicit about what happens to output.
 
 ```python
-from duct import cmd, sh
+from duct import cmd
 
 # Read the name of the current git branch.
-current_branch = sh('git symbolic-ref --short HEAD').read()
+current_branch = cmd("git", "symbolic-ref", "--short", "HEAD").read()
 
 # Log the current branch, with git taking over the terminal as usual.
-cmd('git', 'log', current_branch).run()
+cmd("git", "log", current_branch).run()
 ```
 
 That's exactly the same as the following in standard Python 3.5:
@@ -26,11 +26,11 @@ That's exactly the same as the following in standard Python 3.5:
 ```python
 from subprocess import run, PIPE
 
-result = run('git symbolic-ref --short HEAD', shell=True, stdout=PIPE,
+result = run(["git", "symbolic-ref", "--short", "HEAD"], stdout=PIPE,
              universal_newlines=True, check=True)
-current_branch = result.stdout.rstrip('\n')
+current_branch = result.stdout.rstrip("\n")
 
-run(['git', 'log', current_branch], check=True)
+run(["git", "log", current_branch], check=True)
 ```
 
 
@@ -46,10 +46,10 @@ The duct version is longer, but duct expressions are composable objects,
 so we can build the whole command piece-by-piece:
 
 ```python
-from duct import cmd, sh
+from duct import cmd
 
-echoes = cmd('echo', 'error').stdout_to_stderr().then(cmd('echo', 'output'))
-pipeline = echoes.stderr_to_stdout().pipe(sh('grep stuff'))
+echoes = cmd("echo", "error").stdout_to_stderr().then(cmd("echo", "output"))
+pipeline = echoes.stderr_to_stdout().pipe(cmd("grep", "stuff"))
 pipeline.run()  # This will raise an exception! See below.
 ```
 
@@ -61,7 +61,7 @@ to return an error code, and duct will raise an exception. To ignore the
 error, you can use `unchecked`:
 
 ```python
-result = cmd('false').unchecked().run()
+result = cmd("false").unchecked().run()
 print(result.status)  # 0
 ```
 
@@ -72,7 +72,7 @@ the exception it raises and inspect it like this.
 from duct import cmd, StatusError
 
 try:
-    cmd('false').run()
+    cmd("false").run()
 except StatusError as e:
     print(e.result.status)  # 1
 ```
@@ -84,7 +84,7 @@ returns an error because its stdout is closed:
 
 ```python
 # Raises an exception, because cat returns an error.
-cmd('cat').stdin('/dev/urandom').pipe(cmd('true')).read()
+cmd("cat").stdin("/dev/urandom").pipe(cmd("true")).read()
 ```
 
 
@@ -96,15 +96,13 @@ string.
 from duct import cmd
 from pathlib import Path
 
-myscript = Path('foo')
-mydir = Path('bar')
+myscript = Path("foo")
+mydir = Path("bar")
 cmd(myscript).dir(mydir).run()
 ```
 
 
 ## Reference
-
-### Expression starting functions
 
 #### `cmd`
 
@@ -118,20 +116,6 @@ x = "hi"
 cmd("echo", x).run()
 ```
 
-#### `sh`
-
-Create a command expression from a string of shell code, executed with
-the `shell=True` flag in the `subprocess` module. This can spare you
-from typing a lot of quote characters, or even whole pipelines, but
-please don't use it with anything other than a constant string, because
-shell escaping is tricky.
-
-```python
-sh("echo hi").run()
-```
-
-### Execution methods
-
 #### `run`
 
 Execute the expression and return a `Result` object, which has fields
@@ -141,7 +125,7 @@ If the expression has a non-zero exit status, `run` will raise an
 exception.
 
 ```python
-result = sh("echo foo").stdout_capture().run()
+result = cmd("echo", "foo").stdout_capture().run()
 assert result.status == 0
 assert result.stdout == b"foo\n"
 assert result.stderr == b""
@@ -156,7 +140,7 @@ returns it directly instead of returning a `Result`. Note that in Python
 2 the return value is a *unicode* string.
 
 ```python
-output = sh("echo 日本語").read()
+output = cmd("echo", u"日本語").read()
 assert output == u"日本語"
 ```
 
@@ -168,14 +152,12 @@ finish running and then returns a `Result`, so `start` followed by
 `wait` is equivalent to `run`.
 
 ```python
-handle = sh("echo foo").stdout_capture().start()
+handle = cmd("echo", "foo").stdout_capture().start()
 result = handle.wait()
 assert result.status == 0
 assert result.stdout == b"foo\n"
 assert result.stderr == b""
 ```
-
-### Pipe building methods
 
 #### `pipe`
 
@@ -185,7 +167,7 @@ status of a pipe expression is equal to the right side's status if it's
 nonzero, otherwise the left side's.
 
 ```python
-output = sh("echo dog").pipe(sh("sed s/o/a/")).read()
+output = cmd("echo", "dog").pipe(cmd("sed", "s/o/a/")).read()
 assert output == "dag"
 ```
 
@@ -197,10 +179,8 @@ right side runs. If you want to ignore errors on the left side, similar
 to `;` in bash, use `unchecked` around the left expression.
 
 ```python
-cmd("false").then(sh("echo we never get here")).run()  # StatusError
+cmd("false").then(cmd("echo", "we never get here")).run()  # StatusError
 ```
-
-### Redirections etc.
 
 #### `input`
 
@@ -234,14 +214,14 @@ output bytes end up as `Result.stdout`. `stdout_to_stderr` replaces
 stdout with a copy of the stderr pipe.
 
 ```python
-from duct import sh
+from duct import cmd
 from pathlib import Path
 
-temp_dir = sh("mktemp -d").read()
+temp_dir = cmd("mktemp", "-d").read()
 temp_file = Path(temp_dir) / "file.txt"
-sh("echo some stuff").stdout(temp_file).run()
+cmd("echo", "some stuff").stdout(temp_file).run()
 
-result = sh("echo more stuff").stdout_capture().run()
+result = cmd("echo", "more stuff").stdout_capture().run()
 assert result.stdout == b"more stuff\n"
 ```
 
@@ -251,12 +231,12 @@ Analogous to the `stdout` methods. `stderr_capture` redirects to a pipe
 whose output bytes end up as `Result.stderr`.
 
 ```python
-from duct import sh
+from duct import cmd
 
-sh("echo output && echo junk >&2").stderr_null().run()
+cmd("foo").stderr_null().run()
 
-result = sh("echo error stuff >&2").stderr_capture().run()
-assert result.stderr == b"error stuff\n"
+result = cmd("foo").stderr_capture().run()
+print(result.stderr)
 ```
 
 #### `dir`
@@ -275,7 +255,7 @@ Sets an environment variable for an expression, given a name and a
 value.
 
 ```python
-output = sh("echo $FOO").env("FOO", "bar").read()
+output = cmd("bash", "-c", "echo $FOO").env("FOO", "bar").read()
 assert output == "bar"
 ```
 
@@ -287,7 +267,7 @@ parent environment, or from an exterior (but not interior) call to
 
 ```python
 os.environ["FOO"] = "bar"
-output = sh("echo $FOO").env_remove("FOO").read()
+output = cmd("bash", "-c", "echo $FOO").env_remove("FOO").read()
 assert output == ""
 ```
 
@@ -299,7 +279,7 @@ any calls to `env` in parent expressions.
 
 ```python
 # BAR and BAZ are guaranteed to be undefined when this runs.
-prog = sh("echo $FOO$BAR$BAZ").full_env({"FOO": "1"})
+prog = cmd("bash", "-c", "echo $FOO$BAR$BAZ").full_env({"FOO": "1"})
 
 # This env var would normally get inherited by the child, but full_env
 # above will prevent it.

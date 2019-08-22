@@ -37,11 +37,6 @@ we join a leading `.` if it's missing. This solves two problems:
 - It prevents paths to a nonexistent local file, which _should_ result in
   "command not found", from instead matching a program in the `$PATH`.
 
-Note that this applies to `sh` in addition to `cmd`. Although it's tempting to
-have `sh` accept only strings and not paths, it's important to be able to
-execute paths in shell mode on Windows, where scripts have no Unix-style
-shebang and instead rely on the shell to figure out what their interpreter
-should be.
 
 ## Consistent behavior for `dir`
 
@@ -56,15 +51,7 @@ interpreted from the parent's cwd, but on Unix, because `chdir` happens before
 The Windows behavior is preferable, because it keeps the exe and cwd paths
 independent of each other, rather than making the caller remember the
 interaction between them. To guarantee that behavior, implementations need to
-canonicalize relative exe paths (in `cmd` only, not in `sh`) when the `dir`
-method is in use.
-
-## Picking a shell
-
-Implementations should follow [Python's lead
-here](https://docs.python.org/3/library/subprocess.html#popen-constructor). Use
-`/bin/sh` on POSIX systems and whatever's in the `COMSPEC` environment variable
-on Windows.
+canonicalize relative exe paths when the `dir` method is in use.
 
 ## Inheritable pipes on Windows
 
