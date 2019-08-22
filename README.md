@@ -164,17 +164,6 @@ output = cmd("echo", "dog").pipe(cmd("sed", "s/o/a/")).read()
 assert output == "dag"
 ```
 
-#### `then`
-
-Create a sequence expression, similar to `&&` in bash, and used like
-`pipe` above. The left side runs, and then if its status is zero, the
-right side runs. If you want to ignore errors on the left side, similar
-to `;` in bash, use `unchecked` around the left expression.
-
-```python
-cmd("false").then(cmd("echo", "we never get here")).run()  # StatusError
-```
-
 #### `input`
 
 Redirects an expression's stdin to read from a string or bytes object.
@@ -285,10 +274,9 @@ assert output == "1"
 
 #### `unchecked`
 
-Prevents a non-zero exit status from short-circuiting `then` expressions
-or from causing `run` and friends to return an error. The unchecked exit
-code will still be there on the `Result` returned by `run`; its value
-doesn't change.
+Prevents a non-zero exit status from causing `run` or `read` to return
+an error. The unchecked exit code will still be there on the `Result`
+returned by `run`; its value doesn't change.
 
 "Uncheckedness" sticks to an exit code as it bubbles up through
 complicated expressions, but it doesn't "infect" other exit codes. So
