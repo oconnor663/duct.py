@@ -1,7 +1,7 @@
 # duct.py [![Build Status](https://travis-ci.org/oconnor663/duct.py.svg?branch=master)](https://travis-ci.org/oconnor663/duct.py) [![Build status](https://ci.appveyor.com/api/projects/status/5t3rq1xu5l38uaou/branch/master?svg=true)](https://ci.appveyor.com/project/oconnor663/duct-py/branch/master) [![Coverage Status](https://coveralls.io/repos/oconnor663/duct.py/badge.svg?branch=master&service=github)](https://coveralls.io/github/oconnor663/duct.py?branch=master) [![PyPI version](https://badge.fury.io/py/duct.svg)](https://pypi.python.org/pypi/duct)
 
 
-A Python library for shelling out. One of the goals of duct is to be
+A Python library for shelling out. One of the goals of Duct is to be
 easily portable to other languages, and there's a [Rust
 version](https://github.com/oconnor663/duct.rs) happening in parallel.
 
@@ -42,7 +42,7 @@ Sometimes you have to write complicated pipelines in bash:
 foo 2>&1 | (cat || true) | head -n 10
 ```
 
-The duct version is longer, but duct expressions are composable objects,
+The Duct version is longer, but Duct expressions are composable objects,
 so we can build the whole command piece-by-piece:
 
 ```python
@@ -57,7 +57,7 @@ foo.pipe(cat).pipe(head).run()
 
 ## Errors should never pass silently.
 
-If a command returns an error code, duct will raise an exception:
+If a command returns an error code, Duct will raise an exception:
 
 ```python
 cmd("false").run()  # Raises an exception.
@@ -70,7 +70,7 @@ result = cmd("false").unchecked().run()
 assert result.status == 1
 ```
 
-Note that duct treats errors in a pipe like bash's `pipefail` option:
+Note that Duct treats errors in a pipe like bash's `pipefail` option:
 they count even when they happen on the left. This can be surprising in
 cases where we usually ignore errors. In the following example, `cat`
 returns an error because its stdout is closed:
@@ -155,7 +155,7 @@ assert result.stderr == b""
 #### `pipe`
 
 Create a pipe expression, similar to `|` in bash. The argument becomes
-the right side of the pipe, and it can be any duct expression. The
+the right side of the pipe, and it can be any Duct expression. The
 status of a pipe expression is equal to the right side's status if it's
 nonzero, otherwise the left side's.
 

@@ -2,7 +2,7 @@
 
 Duct was designed for both Python and Rust, and the hope is that it can be
 cloned in lots of different languages. To help with that, this document
-clarifies how duct handles a number of different corner cases.
+clarifies how Duct handles a number of different corner cases.
 
 ## SIGPIPE
 
@@ -22,12 +22,12 @@ heck to do about this.
 When we run the command "foo", it's ambiguous whether we mean "foo" somewhere
 in the `$PATH`/`%PATH%` or "foo" in current directory. Different OS's do
 different things here: Posix usually requires a leading `./` for programs in
-the current directory, but Windows will accept the bare name. In duct we mostly
+the current directory, but Windows will accept the bare name. In Duct we mostly
 just go with the flow on these conventions, by passing string arguments
 straight through to the OS.
 
 However, when the program name is given as an explicit path type (like
-`pathlib.Path` in Python), duct guarantees that it will behave like a filepath.
+`pathlib.Path` in Python), Duct guarantees that it will behave like a filepath.
 To make this work, when we stringify path objects representing relative paths,
 we join a leading `.` if it's missing. This solves two problems:
 
@@ -58,7 +58,7 @@ canonicalize relative exe paths when the `dir` method is in use.
 Spawning child processes on Windows usually involves duplicating some pipes and
 making them inheritable. Unfortunately, that means that *any* child spawned on
 other threads while those pipes are alive will inherit them
-(https://support.microsoft.com/kb/315939). Even if a given duct implementation
+(https://support.microsoft.com/kb/315939). Even if a given Duct implementation
 doesn't use threads internally, it might get called from multiple threads at
 the same time. Duct implementations need to either make sure that the standard
 library they're built on uses a mutex to prevent bad inheritance ([as Rust
@@ -116,7 +116,7 @@ but the core requirement is that something like this must work:
 import os
 # Set a lowercase variable in the parent environment.
 os.environ["foo"] = "bar"
-# Run a duct command that clears that same variable.
+# Run a Duct command that clears that same variable.
 # This command MUST NOT see the variable "foo" or (on Windows) "FOO".
 cmd("my_cmd.sh").env_remove("foo").run()
 ```
