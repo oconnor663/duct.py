@@ -12,7 +12,8 @@ service watchers (like systemd or
 or [peru](https://github.com/buildinspace/peru)). Where the needs of those
 "heavy weight" programs conflict with the needs of a more typical caller, Duct
 optimizes for the typical case. See for example the [partially started
-pipelines](#partially-started-pipelines) section.
+pipelines](#partially-started-pipelines) and [using background threads for
+IO](#using-background-threads-for-io) sections.
 
 ## SIGPIPE
 
@@ -182,3 +183,50 @@ caveats:
   "blame" for the deadlock falls on whatever part of the system is causing the
   pathological read behavior. There's no effective way for Duct to work around
   this.
+
+## Using background threads for IO
+
+The `start` method must use background threads to write input bytes and read
+output bytes from child processes, such that IO makes progress even if `wait`
+is never called. Synchronous methods like `read` may be optimized to avoid
+using threads, as long as the behavior is the same.
+
+Consider the following scenario. I want to spawn two child processes, which
+will exchange messages with each other in the background somehow, e.g. using
+D-Bus. I also want to capture the output of each process. My code looks like
+this:
+
+```python
+handle1 = cmd("child1").stdout_capture().start()
+handle2 = cmd("child2").stdout_capture().start()
+output1 = handle1.wait().stdout
+output2 = handle2.wait().stdout
+```
+
+That's reasonable code -- which users _should_ be allowed to write -- and
+furthermore it will probably pass tests. However, depending on how Duct handles
+output capturing, this code could have a deadlock once the output grows large
+enough. Suppose that the messages these two children exchange with each other
+are synchronous somehow, such that blocking one child will eventually block the
+other. And suppose that (in production but maybe not in tests) both children
+have lots of output, such that they can also block if their parent doesn't make
+space in their stdout pipe buffers by reading.
+
+If Duct only read the captured stdout pipe during `wait`, we would have a
+problem. The call to `handle1.wait` would block until `child1` was finished.
+Then `child2` would block writing to its stdout, because the parent wouldn't be
+reading it yet. And then `child1` would block on `child2`, waiting for
+messages. Deadlock.
+
+For this reason, the `start` method is required to do IO in the background
+using threads. That includes reading captured bytes from stdout and stderr, and
+also writing supplied bytes to stdin. That guarantees that the parent will
+never cause its children to block, regardless of the order of operations after
+`start`.
+
+The implementation is allowed to optimize this out in the synchronous parts of
+the API. For example, the `read` method doesn't necessarily need to spawn a
+background thread for reading, because it can read on the calling thread and
+wait after reading returns EOF. It could also choose to use async IO to run
+multiple read/write loops on the calling thread. But the `start` API in
+particular _must_ do IO in the background, to avoid all possible deadlocks.
