@@ -4,6 +4,16 @@ Duct was designed for both Python and Rust, and the hope is that it can be
 cloned in lots of different languages. To help with that, this document
 clarifies how Duct handles a number of different corner cases.
 
+Note that Duct is a _convenience_ library. As a rule of thumb, programs whose
+primary job is managing child processes will need more control than Duct
+provides, and they aren't the intended users. That includes shells (like Bash),
+service watchers (like systemd or
+[`forever`](https://www.npmjs.com/package/forever)), and build tools (like Make
+or [peru](https://github.com/buildinspace/peru)). Where the needs of those
+"heavy weight" programs conflict with the needs of a more typical caller, Duct
+optimizes for the typical case. See for example the [partially started
+pipelines](#partially-started-pipelines) section.
+
 ## SIGPIPE
 
 Implementations need to catch broken pipe errors in input writer threads, so
@@ -120,3 +130,55 @@ os.environ["foo"] = "bar"
 # This command MUST NOT see the variable "foo" or (on Windows) "FOO".
 cmd("my_cmd.sh").env_remove("foo").run()
 ```
+
+## Partially started pipelines
+
+If the left half of a pipeline starts successfully, but the right half fails to
+start, Duct must **kill and await** the left half, and then return the error
+from the right half. To be clear, this doesn't apply to children that exit with
+an error code, but rather to children that fail to spawn. Most commonly that
+means a command name was misspelled, or the target executable is missing. Less
+commonly, the system may be under heavy load and failing to spawn new
+processes.
+
+Killing child processes, without having been asked to by the caller, frankly
+sucks. An unexpected kill signal might cause some programs to misbehave or
+corrupt data. But it's a necessary compromise to provide the following
+guarantees:
+
+1. The `start` method must return spawn errors immediately. The child process
+   might be a long-running background job that the caller never intends to call
+   `wait` on. If the caller misspells the program name, but Duct delays
+   reporting the spawn error until `wait` is called, the caller might never see
+   the error. That would turn a common mistake into a confusing bug.
+2. Errors in `start` must not leaking zombie children. Duct can't expect
+   callers to do any special error handling for this case. (See the remarks at
+   the top about being a convenience library.) Duct needs call `wait` itself on
+   any other children it's already spawned. Otherwise long-running callers with
+   a simple misspelling like above might eventually exhaust the PID space and
+   lock up their entire machine.
+3. Duct's `start` method must never do a blocking wait. Child processes might
+   be waiting for the parent to do something after `start`, like writing input
+   or closing pipes. Doing an unexpected blocking wait could lead to a
+   deadlock.
+
+Ultimately, the guarantees above make it easier to write correct programs. A
+correct program will only run into this policy when the system it's running on
+is suffering from resource exhaustion. In that case, it *already* needs to be
+prepared for random kill signals, like from the Linux OOM killer. Some other
+caveats:
+
+- Some systems might disable the OOM killer, for more deterministic behavior.
+  Those systems might prefer not to kill partially spawned pipelines for the
+  same reason. They're responsible for guaranteeing that their children aren't
+  blocked, and that they exit promptly in the face of a closed stdout pipe
+  (note that many programming languages [suppress stdout errors by
+  default](http://roscidus.com/blog/blog/2013/06/09/choosing-a-python-replacement-for-0install/#safety)).
+  There's no way for Duct to know whether those requirements have been met, and
+  systems that want that much control over their children aren't Duct's
+  intended users.
+- Some children might be unkillable, even with `SIGKILL`, for example if
+  they're blocked on an uninterruptible read of a FUSE filesystem. In that case
+  "blame" for the deadlock falls on whatever part of the system is causing the
+  pathological read behavior. There's no effective way for Duct to work around
+  this.
