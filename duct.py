@@ -12,6 +12,9 @@ except ImportError:
         pass
 
 
+HAS_WAITID = "waitid" in dir(os)
+
+
 def cmd(prog, *args):
     return Cmd(prog, args)
 
@@ -661,11 +664,15 @@ def safe_popen(*args, **kwargs):
     we're safe. However, the Windows implementation of subprocess.Popen()
     creates temporary inheritable copies of its descriptors, and these can
     leak. The workaround for this is to protect Popen() with a global lock. See
-    https://bugs.python.org/issue25565.'''
+    https://bugs.python.org/issue25565.
+
+    This function also returns a SharedChild object, which wraps
+    subprocess.Popen. That type works around another race condition to do with
+    signaling children.'''
 
     close_fds = (os.name != 'nt')
     with popen_lock:
-        return subprocess.Popen(*args, close_fds=close_fds, **kwargs)
+        return SharedChild(*args, close_fds=close_fds, **kwargs)
 
 
 def decode_with_universal_newlines(b):
@@ -692,3 +699,93 @@ def convert_env_var_name(var):
     if os.name == 'nt':
         return var.upper()
     return var
+
+
+class SharedChild:
+    """The wait() and kill() methods on the standard library Popen class have a
+    race condition on Unix. Normally kill() checks to see whether a process has
+    already been awaited before sending a signal, so that if the PID has been
+    reused by an unrelated process in the meantime it won't accidentally signal
+    that unrelated process. However, if kill() and wait() are called from
+    different threads, it's possible for wait() to free the PID *after* kill()
+    has seen that the child is still running. If the kill() thread pauses at
+    exactly that moment, long enough for the OS to reuse the PID, kill() could
+    kill the wrong process. This is unlikely under ordinary circumstances, but
+    more likely if the system is under heavy load and the PID space is almost
+    exhausted.
+
+    The workaround for this race condition on Unix is to use:
+
+        os.waitid(os.P_PID, child_pid, os.WEXITED | os.WNOWAIT)
+
+    That call waits on the child to exit, but *doesn't* free its PID for reuse.
+    Then we set an internal flag that's synchronized with kill(), before
+    finally calling wait() to reap the child.
+
+    Note that Windows doesn't have this problem, because child handles (unlike
+    raw PIDs) have to be explicitly closed."""
+    def __init__(self, *args, **kwargs):
+        self._child = subprocess.Popen(*args, **kwargs)
+        self._status = None
+        # The status lock is only held long enough to read or write the status,
+        # or to make non-blocking calls like Popen.poll(). Threads calling
+        # os.waitid() release the status lock before taking the wait lock. This
+        # ensures that one thread can call try_wait() while another thread is
+        # blocked on wait().
+        self._status_lock = threading.Lock()
+        self._wait_lock = threading.Lock()
+
+    def wait(self):
+        with self._wait_lock:
+            # See if another thread already waited. If so, return the status we
+            # got before. If not, immediately release the status lock, and move
+            # on to call wait ourselves.
+            with self._status_lock:
+                if self._status is not None:
+                    return self._status
+
+            # No other thread has waited, we're holding the wait lock, and
+            # we've released the status lock. It's now our job to wait. As
+            # documented above, if os.waitid is defined, use that function to
+            # await the child without reaping it. Otherwise we do an ordinary
+            # Popen.wait and accept the race condition.
+            if HAS_WAITID:
+                os.waitid(os.P_PID, self._child.pid, os.WEXITED | os.WNOWAIT)
+            else:
+                # Python does synchronize this internally, so it won't race
+                # with other calls to wait() or poll(). Unfortunately it still
+                # races with kill(), which is what all of this is about.
+                self._child.wait()
+
+            # Finally, while still holding the wait lock, re-acquire the status
+            # lock to reap the child and write the result. Since we know the
+            # child has already exited, this won't block. That guarantees that
+            # any other waiting threads that were blocked on us will see our
+            # result.
+            with self._status_lock:
+                # If the child was already reaped above in the !HAS_WAITID
+                # branch, this will just return the same status again.
+                self._status = self._child.wait()
+                return self._status
+
+    def try_wait(self):
+        with self._status_lock:
+            if self._status is not None:
+                return self._status
+
+            # Do a poll to see whether the child has already exited. Note that
+            # another thread might be in the middle of wait(), but Python
+            # synchronizes wait() and poll() internally to make that race safe.
+            if self._child.poll() is not None:
+                # The child has exited, so wait() will not block.
+                return self.wait()
+
+            # The child is still running.
+            return None
+
+    def kill_and_wait(self):
+        with self._status_lock:
+            if self._status is not None:
+                return self._status
+            self._child.kill()
+        return self.child.wait()
