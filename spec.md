@@ -8,7 +8,7 @@ Note that Duct is a _convenience_ library. As a rule of thumb, programs whose
 primary job is managing child processes will need more control than Duct
 provides, and they aren't the intended users. That includes shells (like Bash),
 service watchers (like systemd or
-[`forever`](https://www.npmjs.com/package/forever)), and build tools (like Make
+[forever](https://www.npmjs.com/package/forever)), and build tools (like Make
 or [peru](https://github.com/buildinspace/peru)). Where the needs of those
 "heavy weight" programs conflict with the needs of a more typical caller, Duct
 optimizes for the typical case. See for example the [partially started
@@ -136,38 +136,42 @@ cmd("my_cmd.sh").env_remove("foo").run()
 
 If the left half of a pipeline starts successfully, but the right half fails to
 start, Duct must **kill and await** the left half, and then return the error
-from the right half. To be clear, this doesn't apply to children that exit with
-an error code, but rather to children that fail to spawn. Most commonly that
-means a command name was misspelled, or the target executable is missing. Less
+from the right half. To be clear, this doesn't happen when children exit with
+an error code, but rather when children fail to spawn. Most commonly that means
+a command name was misspelled, or the target executable is missing. Less
 commonly, the system may be under heavy load and failing to spawn new
 processes.
 
-Killing child processes, without having been asked to by the caller, frankly
-sucks. An unexpected kill signal might cause some programs to misbehave or
-corrupt data. But it's a necessary compromise to provide the following
-guarantees:
+Frankly, this sucks. We shouldn't be killing child processes when we haven't
+been asked to by the caller. An unexpected kill signal might cause some
+programs to misbehave or corrupt data. But it's a necessary compromise to
+provide the following guarantees:
 
 1. The `start` method must return spawn errors immediately. The child process
-   might be a long-running background job that the caller never intends to call
+   might be a long-running background job that the caller never intends to
    `wait` on. If the caller misspells the program name, but Duct delays
    reporting the spawn error until `wait` is called, the caller might never see
    the error. That would turn a common mistake into a confusing bug.
-2. Errors in `start` must not leaking zombie children. Duct can't expect
-   callers to do any special error handling for this case. (See the remarks at
-   the top about being a convenience library.) Duct needs call `wait` itself on
-   any other children it's already spawned. Otherwise long-running callers with
-   a simple misspelling like above might eventually exhaust the PID space and
-   lock up their entire machine.
-3. Duct's `start` method must never do a blocking wait. Child processes might
-   be waiting for the parent to do something after `start`, like writing input
-   or closing pipes. Doing an unexpected blocking wait could lead to a
-   deadlock.
+2. Errors in `start` must not leak zombie children. Duct can't expect callers
+   to do any special error handling for this case. (See the remarks at the top
+   about being a convenience library.) Duct needs call `wait` itself on any
+   children it's already spawned before returning an error. Otherwise
+   long-running callers with a simple misspelling like above might eventually
+   exhaust the PID space and lock up their entire machine.
+3. The `start` method must never do a blocking wait. Child processes might
+   themselves be blocked on something the parent intends to do after `start`,
+   like writing input or closing pipes. Doing an unexpected blocking wait in
+   the parent could lead to a deadlock.
 
-Ultimately, the guarantees above make it easier to write correct programs. A
-correct program will only run into this policy when the system it's running on
-is suffering from resource exhaustion. In that case, it *already* needs to be
-prepared for random kill signals, like from the Linux OOM killer. Some other
-caveats:
+Killing children isn't great, but it's better than the bugs that those
+guarantees are preventing. Ultimately, a correct program will only encounter
+this behavior when the system it's running on is suffering from resource
+exhaustion. In that case, it *already* needs to be prepared for random kill
+signals, like from the Linux OOM killer. This policy makes it easier to write
+correct programs, without creating any new problems that a correct program
+doesn't already have.
+
+Some caveats:
 
 - Some systems might disable the OOM killer, for more deterministic behavior.
   Those systems might prefer not to kill partially spawned pipelines for the
@@ -186,10 +190,9 @@ caveats:
 
 ## Using background threads for IO
 
-The `start` method must use background threads to write input bytes and read
-output bytes from child processes, such that IO makes progress even if `wait`
-is never called. Synchronous methods like `read` may be optimized to avoid
-using threads, as long as the behavior is the same.
+When input bytes are supplied or output bytes are captured, the `start` method
+must use background threads to do that IO, so that IO makes progress even if
+`wait` is never called.
 
 Consider the following scenario. I want to spawn two child processes, which
 will exchange messages with each other in the background somehow, e.g. using
@@ -219,14 +222,13 @@ reading it yet. And then `child1` would block on `child2`, waiting for
 messages. Deadlock.
 
 For this reason, the `start` method is required to do IO in the background
-using threads. That includes reading captured bytes from stdout and stderr, and
-also writing supplied bytes to stdin. That guarantees that the parent will
-never cause its children to block, regardless of the order of operations after
-`start`.
+using threads, both to read captured bytes from stdout and stderr, and to write
+supplied bytes to stdin. That guarantees that the parent will never cause its
+children to block, regardless of the order of operations after `start`.
 
-The implementation is allowed to optimize this out in the synchronous parts of
-the API. For example, the `read` method doesn't necessarily need to spawn a
-background thread for reading, because it can read on the calling thread and
-wait after reading returns EOF. It could also choose to use async IO to run
-multiple read/write loops on the calling thread. But the `start` API in
-particular _must_ do IO in the background, to avoid all possible deadlocks.
+The implementation may avoid using threads in the synchronous parts of the API.
+For example, the `read` method doesn't necessarily need to spawn a background
+thread for reading, because it can read on the calling thread and wait after
+reading returns EOF. It could also choose to use async IO to run multiple
+read/write loops on the calling thread. But the `start` API in particular must
+do IO in the background, to avoid all possible deadlocks.
