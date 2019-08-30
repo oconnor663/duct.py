@@ -490,3 +490,22 @@ def test_unicode():
 
     output = cat.input(in_str).stdout_capture().run()
     assert output.stdout == in_str.encode('utf8')
+
+
+def test_wait():
+    input_bytes = b"some really nice input"
+    take = 10
+    handle = cat_cmd().input(input_bytes).pipe(
+        head_bytes(take)).stdout_capture().start()
+    output = handle.wait()
+    assert output.status == 0
+    assert output.stdout == input_bytes[:take]
+    assert output.stderr is None
+
+
+def test_try_wait_and_kill():
+    handle = cmd('python', '-c', 'import time; timel.sleep(1000000)').start()
+    assert handle.try_wait() is None
+    assert handle.try_wait() is None
+    output = handle.kill_and_wait()
+    assert output.status != 0

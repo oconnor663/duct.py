@@ -356,7 +356,10 @@ class WaitHandle:
 
     def kill_and_wait(self):
         kill(self)
-        return self.wait()
+        try:
+            return self.wait()
+        except StatusError as e:
+            return e.output
 
 
 def wait(handle, blocking):
