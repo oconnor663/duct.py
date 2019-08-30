@@ -516,5 +516,11 @@ def test_try_wait_and_kill():
 
 
 def test_right_side_fails_to_start():
-    with raises(FileNotFoundError):
+    # Python 3 raises the FileNotFoundError, but Python 2 is less consistent.
+    with raises(Exception) as e1:
+        open("file_that_doesnt_exist")
+    not_found_errno = e1.value.errno
+
+    with raises(Exception) as e2:
         sleep_cmd(1000000).pipe(cmd("nonexistent_command_abc123")).run()
+    assert e2.value.errno == not_found_errno
