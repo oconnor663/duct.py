@@ -104,10 +104,10 @@ def test_hello_world():
 
 
 def test_result():
-    result = echo_cmd("more stuff").stdout_capture().run()
-    assert b"more stuff" + NEWLINE == result.stdout
-    assert b"" == result.stderr
-    assert 0 == result.status
+    output = echo_cmd("more stuff").stdout_capture().run()
+    assert b"more stuff" + NEWLINE == output.stdout
+    assert output.stderr is None
+    assert 0 == output.status
 
 
 def test_start():
@@ -116,10 +116,10 @@ def test_start():
     result1 = handle1.wait()
     result2 = handle2.wait()
     assert b"one" + NEWLINE == result1.stdout
-    assert b"" == result1.stderr
+    assert result1.stderr is None
     assert 0 == result1.status
     assert b"two" + NEWLINE == result2.stdout
-    assert b"" == result2.stderr
+    assert result2.stderr is None
     assert 0 == result2.status
 
 
@@ -137,7 +137,7 @@ def test_unchecked():
     assert 1 == false().unchecked().run().status
     with raises(StatusError) as e:
         false().run()
-    assert e.value.result.status == 1
+    assert e.value.output.status == 1
 
 
 def test_unchecked_with_pipe():
@@ -146,20 +146,20 @@ def test_unchecked_with_pipe():
     two = exit_cmd(2)
 
     # Right takes precedence over left.
-    result = one.pipe(two).unchecked().run()
-    assert result.status == 2
+    output = one.pipe(two).unchecked().run()
+    assert output.status == 2
 
     # But not if the right is unchecked.
-    result = one.pipe(two.unchecked()).unchecked().run()
-    assert result.status == 1
+    output = one.pipe(two.unchecked()).unchecked().run()
+    assert output.status == 1
 
     # But right takes precedence again if both are unchecked.
-    result = one.unchecked().pipe(two.unchecked()).run()
-    assert result.status == 2
+    output = one.unchecked().pipe(two.unchecked()).run()
+    assert output.status == 2
 
     # Unless the right status is 0.
-    result = one.unchecked().pipe(zero).run()
-    assert result.status == 1
+    output = one.unchecked().pipe(zero).run()
+    assert output.status == 1
 
 
 def test_pipe():
@@ -298,10 +298,10 @@ def test_stdout():
     out = echo_cmd("hi").stdout_null().read()
     assert '' == out
     # to stderr
-    result = echo_cmd(
+    output = echo_cmd(
         "hi").stdout_to_stderr().stdout_capture().stderr_capture().run()
-    assert b'' == result.stdout
-    assert b'hi' + NEWLINE == result.stderr
+    assert b'' == output.stdout
+    assert b'hi' + NEWLINE == output.stderr
 
 
 def test_stderr():
@@ -326,10 +326,10 @@ def test_stderr():
     out = echo_cmd("hi").stdout_to_stderr().stderr_null().read()
     assert '' == out
     # to stdout
-    result = (echo_cmd("hi").stdout_to_stderr().stderr_to_stdout().
+    output = (echo_cmd("hi").stdout_to_stderr().stderr_to_stdout().
               stdout_capture().stderr_capture().run())
-    assert b'hi' + NEWLINE == result.stdout
-    assert b'' == result.stderr
+    assert b'hi' + NEWLINE == output.stdout
+    assert b'' == output.stderr
 
 
 @mark.skipif(not has_pathlib, reason='pathlib not installed')
@@ -351,17 +351,17 @@ def test_pipe_returns_rightmost_error():
     # Failure on the right.
     with raises(StatusError) as e:
         true().pipe(false()).run()
-    assert 1 == e.value.result.status
+    assert 1 == e.value.output.status
 
     # Failure on the left.
     with raises(StatusError) as e:
         false().pipe(true()).run()
-    assert 1 == e.value.result.status
+    assert 1 == e.value.output.status
 
     # Both sides are failures. The right error code takes precedence.
     with raises(StatusError) as e:
         false().pipe(exit_cmd(3)).run()
-    assert 3 == e.value.result.status
+    assert 3 == e.value.output.status
 
 
 def test_checked_error_contains_status():
@@ -488,5 +488,5 @@ def test_unicode():
     out = cat.input(in_str).read()
     assert out == u"日本語"
 
-    result = cat.input(in_str).stdout_capture().run()
-    assert result.stdout == in_str.encode('utf8')
+    output = cat.input(in_str).stdout_capture().run()
+    assert output.stdout == in_str.encode('utf8')

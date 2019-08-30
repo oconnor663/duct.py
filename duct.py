@@ -12,446 +12,436 @@ except ImportError:
         pass
 
 
+__all__ = ["cmd"]
+
 HAS_WAITID = "waitid" in dir(os)
+
+# Expression and handle types.
+CMD = 0
+PIPE = 1
+INPUT = 2
+STDIN = 3
+STDIN_FILE = 4
+STDIN_NULL = 5
+STDOUT = 6
+STDOUT_FILE = 7
+STDOUT_NULL = 8
+STDOUT_CAPTURE = 9
+STDOUT_TO_STDERR = 10
+STDERR = 11
+STDERR_FILE = 12
+STDERR_NULL = 13
+STDERR_CAPTURE = 14
+STDERR_TO_STDOUT = 15
+DIR = 16
+ENV = 17
+ENV_REMOVE = 18
+FULL_ENV = 19
+UNCHECKED = 20
+
+NAMES = {
+    CMD: "cmd",
+    PIPE: "pipe",
+    INPUT: "input",
+    STDIN: "stdin",
+    STDIN_FILE: "stdin_file",
+    STDIN_NULL: "stdin_null",
+    STDOUT: "stdout",
+    STDOUT_FILE: "stdout_file",
+    STDOUT_NULL: "stdout_null",
+    STDOUT_CAPTURE: "stdout_capture",
+    STDOUT_TO_STDERR: "stdout_to_stderr",
+    STDERR: "stderr",
+    STDERR_FILE: "stderr_file",
+    STDERR_NULL: "stderr_null",
+    STDERR_CAPTURE: "stderr_capture",
+    STDERR_TO_STDOUT: "stderr_to_stdout",
+    DIR: "dir",
+    ENV: "env",
+    ENV_REMOVE: "env_remove",
+    FULL_ENV: "full_env",
+    UNCHECKED: "unchecked",
+}
 
 
 def cmd(prog, *args):
-    return Cmd(prog, args)
+    return Expression(CMD, None, (prog, args))
 
 
-class Expression(object):
-    'Abstract base class for all expression types.'
+class Expression:
+    def __init__(self, _type, inner, payload=None):
+        self._type = _type
+        self._inner = inner
+        self._payload = payload
 
-    def run(self):
-        '''Execute the expression and return a Result, which includes the exit
-        status and any captured output. Raise an exception if the status is
-        non-zero.'''
-        with spawn_output_reader() as (stdout_capture, stdout_thread):
-            with spawn_output_reader() as (stderr_capture, stderr_thread):
-                context = starter_iocontext(stdout_capture, stderr_capture)
-                status = self._exec(context)
-        stdout_bytes = stdout_thread.join()
-        stderr_bytes = stderr_thread.join()
-        result = Result(status.code, stdout_bytes, stderr_bytes)
-        if is_checked_error(status):
-            raise StatusError(result, self)
-        return result
-
-    def read(self):
-        '''Execute the expression and capture its output, similar to backticks
-        or $() in the shell. This is a wrapper around run() which captures
-        stdout, decodes it, trims it, and returns it directly.'''
-        result = self.stdout_capture().run()
-        stdout_str = decode_with_universal_newlines(result.stdout)
-        return stdout_str.rstrip('\n')
+    def __repr__(self):
+        return repr_expression(self)
 
     def start(self):
         '''Equivalent to `run`, but instead of blocking the current thread,
         return a WaitHandle that doesn't block until `wait` is called. This is
         currently implemented with a simple background thread, though in theory
         it could avoid using threads in most cases.'''
-        thread = ThreadWithReturn(self.run)
-        thread.start()
-        return WaitHandle(thread)
+        with new_iocontext() as context:
+            return start_expression(self, context)
+
+    def run(self):
+        '''Execute the expression and return an Output object, which includes
+        the exit status and any captured output. Raise an exception if the
+        status is non-zero.'''
+        return self.start().wait()
+
+    # TODO: reimplement this in terms of reader
+    def read(self):
+        '''Execute the expression and capture its output, similar to backticks
+        or $() in the shell. This is a wrapper around run() which captures
+        stdout, decodes it, trims it, and returns it directly.'''
+        output = self.stdout_capture().run()
+        stdout_str = decode_with_universal_newlines(output.stdout)
+        return stdout_str.rstrip('\n')
 
     def pipe(self, right_side):
-        return Pipe(self, right_side)
+        return Expression(PIPE, None, (self, right_side))
 
     def input(self, buf):
-        return Input(self, buf)
+        return Expression(INPUT, self, buf)
 
     def stdin(self, path):
-        return Stdin(self, path)
+        return Expression(STDIN, self, path)
 
     def stdin_file(self, file_):
-        return StdinFile(self, file_)
+        return Expression(STDIN_FILE, self, file_)
 
     def stdin_null(self):
-        return StdinNull(self)
+        return Expression(STDIN_NULL, self)
 
     def stdout(self, path):
-        return Stdout(self, path)
+        return Expression(STDOUT, self, path)
 
     def stdout_file(self, file_):
-        return StdoutFile(self, file_)
+        return Expression(STDOUT_FILE, self, file_)
 
     def stdout_null(self):
-        return StdoutNull(self)
+        return Expression(STDOUT_NULL, self)
 
     def stdout_capture(self):
-        return StdoutCapture(self)
+        return Expression(STDOUT_CAPTURE, self)
 
     def stdout_to_stderr(self):
-        return StdoutToStderr(self)
+        return Expression(STDOUT_TO_STDERR, self)
 
     def stderr(self, path):
-        return Stderr(self, path)
+        return Expression(STDERR, self, path)
 
     def stderr_file(self, file_):
-        return StderrFile(self, file_)
+        return Expression(STDERR_FILE, self, file_)
 
     def stderr_null(self):
-        return StderrNull(self)
+        return Expression(STDERR_NULL, self)
 
     def stderr_capture(self):
-        return StderrCapture(self)
+        return Expression(STDERR_CAPTURE, self)
 
     def stderr_to_stdout(self):
-        return StderrToStdout(self)
+        return Expression(STDERR_TO_STDOUT, self)
 
     def dir(self, path):
-        return Dir(self, path)
+        return Expression(DIR, self, path)
 
     def env(self, name, val):
-        return Env(self, name, val)
+        return Expression(ENV, self, (name, val))
 
     def env_remove(self, name):
-        return EnvRemove(self, name)
+        return Expression(ENV_REMOVE, self, name)
 
     def full_env(self, env_dict):
-        return FullEnv(self, env_dict)
+        return Expression(FULL_ENV, self, env_dict)
 
     def unchecked(self):
-        return Unchecked(self)
-
-    # Implemented by subclasses.
-
-    def _exec(self, context):
-        raise NotImplementedError  # pragma: no cover
-
-    def __repr__(self):
-        raise NotImplementedError  # pragma: no cover
+        return Expression(UNCHECKED, self)
 
 
-class WaitHandle:
-    def __init__(self, thread_handle):
-        self._thread_handle = thread_handle
+def start_expression(expression, context):
+    handle_inner = None
+    handle_payload_cell = [None]
 
-    def wait(self):
-        return self._thread_handle.join()
+    if expression._type == CMD:
+        prog, args = expression._payload
+        handle_payload_cell[0] = start_cmd(context, prog, args)
+    elif expression._type == PIPE:
+        left_expr, right_expr = expression._payload
+        handle_payload_cell[0] = start_pipe(context, left_expr, right_expr)
+    else:
+        # IO redirect expressions
+        with modify_context(expression, context,
+                            handle_payload_cell) as modified_context:
+            handle_inner = start_expression(expression._inner,
+                                            modified_context)
+
+    return WaitHandle(expression._type, handle_inner, handle_payload_cell[0],
+                      str(expression), context.stdout_capture,
+                      context.stderr_capture)
 
 
-Result = namedtuple('Result', ['status', 'stdout', 'stderr'])
+def start_cmd(context, prog, args):
+    prog_str = stringify_with_dot_if_path(prog)
+    maybe_absolute_prog = maybe_canonicalize_exe_path(prog_str, context)
+    args_strs = tuple(stringify_if_path(arg) for arg in args)
+    argv = (maybe_absolute_prog, ) + args_strs
+    return safe_popen(argv,
+                      cwd=context.dir,
+                      env=context.env,
+                      stdin=context.stdin,
+                      stdout=context.stdout,
+                      stderr=context.stderr)
+
+
+def start_pipe(context, left_expr, right_expr):
+    read_pipe, write_pipe = open_pipe()
+    with read_pipe:
+        with write_pipe:
+            # Start the left side first. If this fails for some reason,
+            # just let the failure propagate.
+            left_context = context._replace(stdout=write_pipe)
+            left_handle = start_expression(left_expr, left_context)
+
+        # Now the left side is started. If the right side fails to start,
+        # we can't let the left side turn into a zombie. We have to await
+        # it, and that means we have to kill it.
+        right_context = context._replace(stdin=read_pipe)
+        try:
+            right_handle = start_expression(right_expr, right_context)
+        except Exception:
+            kill(left_handle)
+            # This wait helper function doesn't throw on non-zero statuses or
+            # join capture threads.
+            wait(left_handle, True)
+            raise
+
+    return (left_handle, right_handle)
+
+
+@contextmanager
+def modify_context(expression, context, handle_payload_cell):
+    arg = expression._payload
+
+    if expression._type == INPUT:
+        if is_unicode(arg):
+            buf = encode_with_universal_newlines(arg)
+        elif is_bytes(arg):
+            buf = arg
+        else:
+            raise TypeError("Not a valid input parameter: " + repr(arg))
+        with spawn_input_writer(buf, handle_payload_cell) as read_pipe:
+            yield context._replace(stdin=read_pipe)
+
+    elif expression._type == STDIN:
+        with open_path(arg, "rb") as f:
+            yield context._replace(stdin=f)
+
+    elif expression._type == STDIN_FILE:
+        yield context._replace(stdin=arg)
+
+    elif expression._type == STDIN_NULL:
+        with open_devnull("rb") as f:
+            yield context._replace(stdin=f)
+
+    elif expression._type == STDOUT:
+        with open_path(arg, "wb") as f:
+            yield context._replace(stdout=f)
+
+    elif expression._type == STDOUT_FILE:
+        yield context._replace(stdout=arg)
+
+    elif expression._type == STDOUT_NULL:
+        with open_devnull("wb") as f:
+            yield context._replace(stdout=f)
+
+    elif expression._type == STDOUT_CAPTURE:
+        yield context._replace(stdout=context.stdout_capture.get_write_pipe())
+
+    elif expression._type == STDOUT_TO_STDERR:
+        yield context._replace(stdout=context.stderr)
+
+    elif expression._type == STDERR:
+        with open_path(arg, "wb") as f:
+            yield context._replace(stderr=f)
+
+    elif expression._type == STDERR_FILE:
+        yield context._replace(stderr=arg)
+
+    elif expression._type == STDERR_NULL:
+        with open_devnull("wb") as f:
+            yield context._replace(stderr=f)
+
+    elif expression._type == STDERR_CAPTURE:
+        yield context._replace(stderr=context.stderr_capture.get_write_pipe())
+
+    elif expression._type == STDERR_TO_STDOUT:
+        yield context._replace(stderr=context.stdout)
+
+    elif expression._type == DIR:
+        yield context._replace(dir=stringify_if_path(arg))
+
+    elif expression._type == ENV:
+        # Don't modify the environment dictionary in place. That would affect
+        # all references to it. Make a copy instead.
+        name, val = arg
+        new_env = context.env.copy()
+        # Windows needs special handling of env var names.
+        new_env[convert_env_var_name(name)] = stringify_if_path(val)
+        yield context._replace(env=new_env)
+
+    elif expression._type == ENV_REMOVE:
+        # As above, don't modify the dictionary in place.
+        new_env = context.env.copy()
+        # Windows needs special handling of env var names.
+        new_env.pop(convert_env_var_name(arg), None)
+        yield context._replace(env=new_env)
+
+    elif expression._type == FULL_ENV:
+        # Windows needs special handling of env var names.
+        new_env = dict((convert_env_var_name(k), v) for (k, v) in arg.items())
+        yield context._replace(env=new_env)
+
+    elif expression._type == UNCHECKED:
+        # Unchecked only affects what happens during wait.
+        yield context
+
+    else:
+        raise NotImplementedError
+
+
+Output = namedtuple('Output', ['status', 'stdout', 'stderr'])
 
 
 class StatusError(subprocess.CalledProcessError):
-    def __init__(self, result, expression):
-        self.result = result
-        self.expression = expression
+    def __init__(self, output, expression_str):
+        self.output = output
+        self._expression_str = expression_str
 
     def __str__(self):
         return 'Expression {0} returned non-zero exit status: {1}'.format(
-            self.expression, self.result)
-
-
-class Cmd(Expression):
-    def __init__(self, prog, args):
-        '''The prog and args will be passed directly to subprocess.call(),
-        which determines the types allowed here (strings and bytes). In
-        addition, we also explicitly support pathlib Paths, by converting them
-        to strings.'''
-        self._prog = prog
-        self._args = args
-
-    def _exec(self, context):
-        prog_str = stringify_with_dot_if_path(self._prog)
-        maybe_absolute_prog = maybe_canonicalize_exe_path(prog_str, context)
-        args_strs = tuple(stringify_if_path(arg) for arg in self._args)
-        argv = (maybe_absolute_prog, ) + args_strs
-        proc = safe_popen(argv,
-                          cwd=context.dir,
-                          env=context.env,
-                          stdin=context.stdin,
-                          stdout=context.stdout,
-                          stderr=context.stderr)
-        code = proc.wait()
-        return ExecStatus(code=code, checked=True)
-
-    def __repr__(self):
-        argv = (self._prog, ) + tuple(self._args)
-        return 'cmd({0})'.format(', '.join(repr(arg) for arg in argv))
-
-
-# Pipe uses another thread to run the left side of the pipe in parallel with
-# the right. This is required because both the left and the right might be
-# compound expressions, where a second command might need to be started after
-# the first finishes, so someone has to be waiting on both sides at the same
-# time. There are Unix-specific ways to wait on multiple processes at once, but
-# those can conflict with other listeners that might by in the same process,
-# and they won't work on Windows anyway.
-class Pipe(Expression):
-    def __init__(self, left, right):
-        self._left = left
-        self._right = right
-
-    def _exec(self, context):
-        # Open a read/write pipe. The write end gets passed to the left as
-        # stdout, and the read end gets passed to the right as stdin. Either
-        # side could be a compound expression (like A.then(B)), so we have to
-        # wait until each command is completely finished before we can close
-        # its end of the pipe. Closing the write end allows the right side to
-        # receive EOF, and closing the read end allows the left side to receive
-        # SIGPIPE.
-        read_pipe, write_pipe = open_pipe()
-        right_context = context._replace(stdin=read_pipe)
-        left_context = context._replace(stdout=write_pipe)
-
-        def do_left():
-            with write_pipe:
-                return self._left._exec(left_context)
-
-        left_thread = ThreadWithReturn(target=do_left)
-        left_thread.start()
-
-        with read_pipe:
-            right_status = self._right._exec(right_context)
-        left_status = left_thread.join()
-
-        # Checked errors take precedence over unchecked errors, all errors take
-        # precedence over success, and all else being equal, right takes
-        # precedence over left.
-        if is_checked_error(right_status):
-            return right_status
-        elif is_checked_error(left_status):
-            return left_status
-        elif right_status.code != 0:
-            return right_status
-        else:
-            return left_status
-
-    def __repr__(self):
-        return "{0}.pipe({1})".format(repr(self._left), repr(self._right))
-
-
-class Unchecked(Expression):
-    def __init__(self, inner_expression):
-        self._inner = inner_expression
-
-    def _exec(self, context):
-        status = self._inner._exec(context)
-        return status._replace(checked=False)
-
-    def __repr__(self):
-        return "{0}.unchecked()".format(repr(self._inner))
-
-
-class IORedirectExpression(Expression):
-    def __init__(self, inner_expression, method_name, method_args):
-        self._inner = inner_expression
-        self._method_name = method_name
-        self._method_args = ", ".join(repr(arg) for arg in method_args)
-
-    def _exec(self, context):
-        with self._update_context(context) as updated_context:
-            return self._inner._exec(updated_context)
-
-    def __repr__(self):
-        return "{0}.{1}({2})".format(repr(self._inner), self._method_name,
-                                     self._method_args)
-
-    # Implemented by subclasses.
-
-    def _update_context(self, context):
-        raise NotImplementedError  # pragma: no cover
-
-
-class Input(IORedirectExpression):
-    def __init__(self, inner, arg):
-        super(Input, self).__init__(inner, "input", [arg])
-        # If the argument is a string, convert it to bytes.
-        # TODO: Might be cheaper to open the pipe in text mode.
-        if is_unicode(arg):
-            self._buf = encode_with_universal_newlines(arg)
-        elif is_bytes(arg):
-            self._buf = arg
-        else:
-            raise TypeError("Not a valid input parameter: " + repr(arg))
-
-    @contextmanager
-    def _update_context(self, context):
-        with spawn_input_writer(self._buf) as read_pipe:
-            yield context._replace(stdin=read_pipe)
-
-
-class Stdin(IORedirectExpression):
-    def __init__(self, inner, path):
-        super(Stdin, self).__init__(inner, "stdin", [path])
-        self._path = path
-
-    @contextmanager
-    def _update_context(self, context):
-        with open_path(self._path, "r") as f:
-            yield context._replace(stdin=f)
-
-
-class StdinFile(IORedirectExpression):
-    def __init__(self, inner, file_):
-        super(StdinFile, self).__init__(inner, "stdin_file", [file_])
-        self._file = file_
-
-    @contextmanager
-    def _update_context(self, context):
-        yield context._replace(stdin=self._file)
-
-
-class StdinNull(IORedirectExpression):
-    def __init__(self, inner):
-        super(StdinNull, self).__init__(inner, "stdin_null", [])
-
-    @contextmanager
-    def _update_context(self, context):
-        with open_devnull("r") as f:
-            yield context._replace(stdin=f)
-
-
-class Stdout(IORedirectExpression):
-    def __init__(self, inner, path):
-        super(Stdout, self).__init__(inner, "stdout", [path])
-        self._path = path
-
-    @contextmanager
-    def _update_context(self, context):
-        with open_path(self._path, "w") as f:
-            yield context._replace(stdout=f)
-
-
-class StdoutFile(IORedirectExpression):
-    def __init__(self, inner, file_):
-        super(StdoutFile, self).__init__(inner, "stdout_file", [file_])
-        self._file = file_
-
-    @contextmanager
-    def _update_context(self, context):
-        yield context._replace(stdout=self._file)
-
-
-class StdoutNull(IORedirectExpression):
-    def __init__(self, inner):
-        super(StdoutNull, self).__init__(inner, "stdout_null", [])
-
-    @contextmanager
-    def _update_context(self, context):
-        with open_devnull("w") as f:
-            yield context._replace(stdout=f)
-
-
-class StdoutCapture(IORedirectExpression):
-    def __init__(self, inner):
-        super(StdoutCapture, self).__init__(inner, "stdout_capture", [])
-
-    @contextmanager
-    def _update_context(self, context):
-        yield context._replace(stdout=context.stdout_capture)
-
-
-class StdoutToStderr(IORedirectExpression):
-    def __init__(self, inner):
-        super(StdoutToStderr, self).__init__(inner, "stdout_to_stderr", [])
-
-    @contextmanager
-    def _update_context(self, context):
-        yield context._replace(stdout=context.stderr)
-
-
-class Stderr(IORedirectExpression):
-    def __init__(self, inner, path):
-        super(Stderr, self).__init__(inner, "stderr", [path])
-        self._path = path
-
-    @contextmanager
-    def _update_context(self, context):
-        with open_path(self._path, "w") as f:
-            yield context._replace(stderr=f)
-
-
-class StderrFile(IORedirectExpression):
-    def __init__(self, inner, file_):
-        super(StderrFile, self).__init__(inner, "stderr_file", [file_])
-        self._file = file_
-
-    @contextmanager
-    def _update_context(self, context):
-        yield context._replace(stderr=self._file)
-
-
-class StderrNull(IORedirectExpression):
-    def __init__(self, inner):
-        super(StderrNull, self).__init__(inner, "stderr_null", [])
-
-    @contextmanager
-    def _update_context(self, context):
-        with open_devnull("w") as f:
-            yield context._replace(stderr=f)
-
-
-class StderrCapture(IORedirectExpression):
-    def __init__(self, inner):
-        super(StderrCapture, self).__init__(inner, "stderr_capture", [])
-
-    @contextmanager
-    def _update_context(self, context):
-        yield context._replace(stderr=context.stderr_capture)
-
-
-class StderrToStdout(IORedirectExpression):
-    def __init__(self, inner):
-        super(StderrToStdout, self).__init__(inner, "stderr_to_stdout", [])
-
-    @contextmanager
-    def _update_context(self, context):
-        yield context._replace(stderr=context.stdout)
-
-
-class Dir(IORedirectExpression):
-    def __init__(self, inner, path):
-        super(Dir, self).__init__(inner, "dir", [path])
-        self._path = stringify_if_path(path)
-
-    @contextmanager
-    def _update_context(self, context):
-        yield context._replace(dir=self._path)
-
-
-class Env(IORedirectExpression):
-    def __init__(self, inner, name, val):
-        super(Env, self).__init__(inner, "env", [name, val])
-        # Windows needs special handling of env var names.
-        self._name = convert_env_var_name(name)
-        self._val = stringify_if_path(val)
-
-    @contextmanager
-    def _update_context(self, context):
-        # Pretend the IOContext is totally immutable. Copy its environment
-        # dictionary instead of modifying it in place.
-        new_env = context.env.copy()
-        new_env[self._name] = self._val
-        yield context._replace(env=new_env)
-
-
-class EnvRemove(IORedirectExpression):
-    def __init__(self, inner, name):
-        super(EnvRemove, self).__init__(inner, "env_remove", [name])
-        # Windows needs special handling of env var names.
-        self._name = convert_env_var_name(name)
-
-    @contextmanager
-    def _update_context(self, context):
-        # As above, don't modify the dictionary.
-        new_env = context.env.copy()
-        new_env.pop(self._name, None)
-        yield context._replace(env=new_env)
-
-
-class FullEnv(IORedirectExpression):
-    def __init__(self, inner, env_dict):
-        super(FullEnv, self).__init__(inner, "full_env", [env_dict])
-        # Windows needs special handling of env var names.
-        self._env_dict = dict(
-            (convert_env_var_name(k), v) for (k, v) in env_dict.items())
-
-    @contextmanager
-    def _update_context(self, context):
-        yield context._replace(env=self._env_dict.copy())
+            self._expression_str, self.output)
+
+
+class WaitHandle:
+    def __init__(self, _type, inner, payload, expression_str, stdout_capture,
+                 stderr_capture):
+        self._type = _type
+        self._inner = inner
+        self._payload = payload
+        self._expression_str = expression_str
+        self._stdout_capture = stdout_capture
+        self._stderr_capture = stderr_capture
+
+    def wait(self):
+        status = wait(self, True)
+        return self._finish_output(status)
+
+    def try_wait(self):
+        status = wait(self, False)
+        if status is not None:
+            return self._finish_output(status)
+        return None
+
+    def _finish_output(self, status):
+        assert status is not None
+        stdout = self._stdout_capture.join()
+        stderr = self._stderr_capture.join()
+        output = Output(status.code, stdout, stderr)
+        if is_checked_error(status):
+            raise StatusError(output, self._expression_str)
+        return output
+
+    def kill_and_wait(self):
+        kill(self)
+        return self.wait()
+
+
+def wait(handle, blocking):
+    if handle._type == CMD:
+        shared_child = handle._payload
+        return wait_child(shared_child, blocking)
+    elif handle._type == PIPE:
+        left, right = handle._payload
+        return wait_pipe(left, right, blocking)
+
+    status = wait(handle._inner, blocking)
+    if blocking:
+        assert status is not None
+
+    if handle._type == INPUT:
+        input_writer_thread = handle._payload
+        if status is not None:
+            input_writer_thread.join()
+    elif handle._type == UNCHECKED:
+        if status is not None:
+            status = status._replace(checked=False)
+
+    return status
+
+
+def wait_child(shared_child, blocking):
+    if blocking:
+        status = shared_child.wait()
+    else:
+        status = shared_child.try_wait()
+    if not blocking and status is None:
+        return None
+    assert status is not None
+    return ExecStatus(code=status, checked=True)
+
+
+def wait_pipe(left, right, blocking):
+    left_status = wait(left, blocking)
+    right_status = wait(right, blocking)
+    if not blocking and (left_status is None or right_status is None):
+        return None
+    assert left_status is not None and right_status is not None
+    if is_checked_error(right_status):
+        return right_status
+    elif is_checked_error(left_status):
+        return left_status
+    elif right_status.code != 0:
+        return right_status
+    else:
+        return left_status
+
+
+def kill(handle):
+    if handle._type == CMD:
+        shared_child = handle._payload
+        shared_child.kill()
+    elif handle._type == PIPE:
+        left, right = handle._payload
+        kill(left)
+        kill(right)
+    else:
+        kill(handle._inner)
+
+
+def repr_expression(expression):
+    if expression._type == CMD:
+        prog, args = expression._payload
+        args_str = repr(prog)
+        for arg in args:
+            args_str += ", " + repr(arg)
+        return "cmd({})".format(args_str)
+    elif expression._type == PIPE:
+        left, right = expression._payload
+        return "{}.pipe({})".format(repr_expression(left),
+                                    repr_expression(right))
+    else:
+        name = NAMES[expression._type]
+        inner = repr_expression(expression._inner)
+        arg = ""
+        if expression._payload is not None:
+            if type(expression._payload) is tuple:
+                arg = ", ".join(repr(x) for x in expression._payload)
+            else:
+                arg = repr(expression._payload)
+        return "{}.{}({})".format(inner, name, arg)
 
 
 # The IOContext represents the child process environment at any given point in
@@ -471,19 +461,25 @@ IOContext = namedtuple("IOContext", [
 ])
 
 
-def starter_iocontext(stdout_capture, stderr_capture):
+@contextmanager
+def new_iocontext():
     # Hardcode the standard file descriptors. We can't rely on None here,
     # becase STDOUT/STDERR swapping needs to work.
-    return IOContext(
+    context = IOContext(
         stdin=0,
         stdout=1,
         stderr=2,
         dir=os.getcwd(),
         # Pretend this dictionary is immutable please.
         env=os.environ.copy(),
-        stdout_capture=stdout_capture,
-        stderr_capture=stderr_capture,
+        stdout_capture=OutputCapture(),
+        stderr_capture=OutputCapture(),
     )
+    try:
+        yield context
+    finally:
+        context.stdout_capture.close_write_pipe()
+        context.stderr_capture.close_write_pipe()
 
 
 ExecStatus = namedtuple("ExecStatus", ["code", "checked"])
@@ -524,7 +520,7 @@ except NameError:
 
 
 @contextmanager
-def spawn_input_writer(input_bytes):
+def spawn_input_writer(input_bytes, writer_thread_cell):
     read, write = open_pipe()
 
     def write_thread():
@@ -538,27 +534,47 @@ def spawn_input_writer(input_bytes):
                 pass
 
     thread = ThreadWithReturn(write_thread)
+    writer_thread_cell[0] = thread
     thread.start()
     with read:
         yield read
-    thread.join()
 
 
-@contextmanager
-def spawn_output_reader():
-    read, write = open_pipe()
+# Avoid spawning output reader threads unless the caller requests to capture
+# output. The close_write_pipe() method is called at the end of start(), so
+# that the write pipe is closed. Then the join() method is called during
+# wait(), to join the reader thread and retrieve the collected output.
+#
+# Note .read() and .reader() *don't* use reader threads from this class.
+# Instead, in those cases, the caller reads synchronously.
+class OutputCapture:
+    def __init__(self):
+        self._write_pipe = None
+        self._thread = None
 
-    def read_thread():
-        with read:
-            return read.read()
+    # This spawns the reader thread lazily if an expression requests it.
+    def get_write_pipe(self):
+        if self._thread is None:
+            read_pipe, self._write_pipe = open_pipe()
 
-    thread = ThreadWithReturn(read_thread)
-    thread.start()
-    with write:
-        # We yield the thread too, so that the caller can get the str/bytes
-        # it collects.
-        yield write, thread
-    thread.join()
+            def read_thread():
+                with read_pipe:
+                    return read_pipe.read()
+
+            self._thread = ThreadWithReturn(read_thread)
+            self._thread.start()
+
+        return self._write_pipe
+
+    def close_write_pipe(self):
+        if self._write_pipe is not None:
+            self._write_pipe.close()
+
+    def join(self):
+        if self._thread is not None:
+            return self._thread.join()
+        else:
+            return None
 
 
 def stringify_if_path(x):
@@ -748,7 +764,7 @@ class SharedChild:
             # we've released the status lock. It's now our job to wait. As
             # documented above, if os.waitid is defined, use that function to
             # await the child without reaping it. Otherwise we do an ordinary
-            # Popen.wait and accept the race condition.
+            # Popen.wait and accept the race condition on some platforms.
             if HAS_WAITID:
                 os.waitid(os.P_PID, self._child.pid, os.WEXITED | os.WNOWAIT)
             else:
@@ -772,20 +788,19 @@ class SharedChild:
         with self._status_lock:
             if self._status is not None:
                 return self._status
-
             # Do a poll to see whether the child has already exited. Note that
             # another thread might be in the middle of wait(), but Python
             # synchronizes wait() and poll() internally to make that race safe.
-            if self._child.poll() is not None:
-                # The child has exited, so wait() will not block.
-                return self.wait()
-
-            # The child is still running.
+            polled_status = self._child.poll()
+        # If poll() says that the child has already exited, do a full wait to
+        # clean it up, which will not block. Note that we've released the
+        # status lock here, becuase wait() will re-acquire it.
+        if polled_status is not None:
+            return self.wait()
+        else:
             return None
 
-    def kill_and_wait(self):
+    def kill(self):
         with self._status_lock:
-            if self._status is not None:
-                return self._status
-            self._child.kill()
-        return self.child.wait()
+            if self._status is None:
+                self._child.kill()
