@@ -747,8 +747,8 @@ class SharedChild:
         self._child = subprocess.Popen(*args, **kwargs)
         self._status = None
         # The status lock is only held long enough to read or write the status,
-        # or to make non-blocking calls like Popen.poll(). Threads calling
-        # os.waitid() release the status lock before taking the wait lock. This
+        # or to make non-blocking calls like Popen.poll(). Threads making a
+        # blocking call to os.waitid() release the status lock first. This
         # ensures that one thread can call try_wait() while another thread is
         # blocked on wait().
         self._status_lock = threading.Lock()
@@ -778,9 +778,8 @@ class SharedChild:
 
             # Finally, while still holding the wait lock, re-acquire the status
             # lock to reap the child and write the result. Since we know the
-            # child has already exited, this won't block. That guarantees that
-            # any other waiting threads that were blocked on us will see our
-            # result.
+            # child has already exited, this won't block. Any other waiting
+            # threads that were blocked on us will see our result.
             with self._status_lock:
                 # If the child was already reaped above in the !HAS_WAITID
                 # branch, this will just return the same status again.
