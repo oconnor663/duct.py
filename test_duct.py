@@ -45,6 +45,10 @@ def echo_cmd(s):
     return cmd('python', '-c', 'import sys; print(" ".join(sys.argv[1:]))', s)
 
 
+def sleep_cmd(seconds):
+    return cmd('python', '-c', 'import time; time.sleep({})'.format(seconds))
+
+
 def head_bytes(c):
     code = textwrap.dedent('''\
         import os
@@ -504,8 +508,13 @@ def test_wait():
 
 
 def test_try_wait_and_kill():
-    handle = cmd('python', '-c', 'import time; timel.sleep(1000000)').start()
+    handle = sleep_cmd(1000000).start()
     assert handle.try_wait() is None
     assert handle.try_wait() is None
     output = handle.kill_and_wait()
     assert output.status != 0
+
+
+def test_right_side_fails_to_start():
+    with raises(FileNotFoundError):
+        sleep_cmd(1000000).pipe(cmd("nonexistent_command_abc123")).run()
