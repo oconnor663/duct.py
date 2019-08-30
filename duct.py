@@ -791,14 +791,25 @@ class SharedChild:
         with self._status_lock:
             if self._status is not None:
                 return self._status
-            # Do a poll to see whether the child has already exited. Note that
-            # another thread might be in the middle of wait(), but Python
-            # synchronizes wait() and poll() internally to make that race safe.
-            polled_status = self._child.poll()
-        # If poll() says that the child has already exited, do a full wait to
-        # clean it up, which will not block. Note that we've released the
-        # status lock here, becuase wait() will re-acquire it.
-        if polled_status is not None:
+
+            # The child hasn't been waited on yet, so we need to do a
+            # non-blocking check to see if it's still running. The Popen type
+            # provides the poll() method for this, but that might reap the
+            # child and free its PID, which would make this a race with
+            # concurrent callers of the blocking wait() method above, who might
+            # be about to call os.waitid on that PID. When os.waitid is
+            # available, use that again here, with the WNOHANG flag. Otherwise
+            # just use poll() and rely on Python's internal synchronization.
+            if HAS_WAITID:
+                poll_result = os.waitid(os.P_PID, self._child.pid,
+                                        os.WEXITED | os.WNOWAIT | os.WNOHANG)
+            else:
+                poll_result = self._child.poll()
+
+        # If either of the poll approaches above returned non-None, do a full
+        # wait to reap the child, which will not block. Note that we've
+        # released the status lock here, because wait() will re-acquire it.
+        if poll_result is not None:
             return self.wait()
         else:
             return None

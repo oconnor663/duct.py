@@ -45,6 +45,12 @@ def echo_cmd(s):
     return cmd('python', '-c', 'import sys; print(" ".join(sys.argv[1:]))', s)
 
 
+def echo_err_cmd(s):
+    return cmd('python', '-c',
+               'import sys; sys.stderr.write(" ".join(sys.argv[1:]) + "\\n")',
+               s)
+
+
 def sleep_cmd(seconds):
     return cmd('python', '-c', 'import time; time.sleep({})'.format(seconds))
 
@@ -507,7 +513,18 @@ def test_wait():
     assert output.stderr is None
 
 
-def test_try_wait_and_kill():
+def test_try_wait():
+    handle = echo_err_cmd("error stuff").pipe(
+        echo_cmd("output stuff")).stdout_capture().stderr_capture().start()
+    output = None
+    while output is None:
+        output = handle.try_wait()
+    assert output.status == 0
+    assert output.stdout == b"output stuff" + NEWLINE
+    assert output.stderr == b"error stuff" + NEWLINE
+
+
+def test_wait_and_kill():
     handle = sleep_cmd(1000000).start()
     assert handle.try_wait() is None
     assert handle.try_wait() is None
