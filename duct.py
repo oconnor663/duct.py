@@ -309,7 +309,7 @@ def modify_context(expression, context, handle_payload_cell):
         yield context
 
     else:
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 Output = namedtuple('Output', ['status', 'stdout', 'stderr'])
