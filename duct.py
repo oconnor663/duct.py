@@ -138,6 +138,10 @@ class Expression:
         return Expression(PIPE, None, (self, right_side))
 
     def stdin_bytes(self, buf):
+        r"""Redirect the standard input of the expression to a pipe, and write
+        the supplied bytes to the pipe using a background thread. This also
+        accepts a string, in which case it converts any "\n" characters to
+        os.linesep and encodes the result as UTF-8."""
         return Expression(STDIN_BYTES, self, buf)
 
     def stdin_path(self, path):

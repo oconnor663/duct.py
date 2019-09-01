@@ -600,7 +600,7 @@ def test_reader():
     # Readlines is provided by BufferedIOBase, so this tests that we've
     # inherited from it correctly.
     lines = reader.readlines()
-    assert lines == [b"abc\n", b"def\n", b"123"]
+    assert lines == [b"abc" + NEWLINE, b"def" + NEWLINE, b"123"]
     assert reader._read_pipe is None, "has been awaited"
 
 
