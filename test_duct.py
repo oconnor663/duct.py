@@ -173,7 +173,8 @@ def test_unchecked_with_pipe():
 
 
 def test_pipe():
-    out = head_bytes(3).pipe(replace('x', 'a')).stdin_bytes("xxxxxxxxxx").read()
+    out = head_bytes(3).pipe(replace('x',
+                                     'a')).stdin_bytes("xxxxxxxxxx").read()
     assert "aaa" == out
 
 
@@ -545,3 +546,15 @@ def test_right_side_fails_to_start():
     with raises(Exception) as e2:
         sleep_cmd(1000000).pipe(cmd("nonexistent_command_abc123")).run()
     assert e2.value.errno == not_found_errno
+
+
+def test_before_spawn():
+    def callback_inner(command, kwargs):
+        command.append("inner")
+
+    def callback_outer(command, kwargs):
+        command.append("outer")
+
+    out = echo_cmd("some").before_spawn(callback_inner).before_spawn(
+        callback_outer).read()
+    assert out == "some outer inner"

@@ -38,6 +38,7 @@ ENV = 17
 ENV_REMOVE = 18
 FULL_ENV = 19
 UNCHECKED = 20
+BEFORE_SPAWN = 21
 
 NAMES = {
     CMD: "cmd",
@@ -61,6 +62,7 @@ NAMES = {
     ENV_REMOVE: "env_remove",
     FULL_ENV: "full_env",
     UNCHECKED: "unchecked",
+    BEFORE_SPAWN: "before_spawn",
 }
 
 
@@ -160,6 +162,9 @@ class Expression:
     def unchecked(self):
         return Expression(UNCHECKED, self)
 
+    def before_spawn(self, callback):
+        return Expression(BEFORE_SPAWN, self, callback)
+
 
 def start_expression(expression, context):
     handle_inner = None
@@ -186,14 +191,19 @@ def start_expression(expression, context):
 def start_cmd(context, prog, args):
     prog_str = stringify_with_dot_if_path(prog)
     maybe_absolute_prog = maybe_canonicalize_exe_path(prog_str, context)
-    args_strs = tuple(stringify_if_path(arg) for arg in args)
-    argv = (maybe_absolute_prog, ) + args_strs
-    return safe_popen(argv,
-                      cwd=context.dir,
-                      env=context.env,
-                      stdin=context.stdin,
-                      stdout=context.stdout,
-                      stderr=context.stderr)
+    args_strs = [stringify_if_path(arg) for arg in args]
+    command = [maybe_absolute_prog] + args_strs
+    kwargs = {
+        "cwd": context.dir,
+        "env": context.env,
+        "stdin": context.stdin,
+        "stdout": context.stdout,
+        "stderr": context.stderr,
+    }
+    # The innermost hooks are pushed last, and we execute them last.
+    for hook in context.before_spawn_hooks:
+        hook(command, kwargs)
+    return safe_popen(command, **kwargs)
 
 
 def start_pipe(context, left_expr, right_expr):
@@ -307,6 +317,11 @@ def modify_context(expression, context, handle_payload_cell):
     elif expression._type == UNCHECKED:
         # Unchecked only affects what happens during wait.
         yield context
+
+    elif expression._type == BEFORE_SPAWN:
+        # As with env, don't modify the list in place. Make a copy.
+        before_spawn_hooks = context.before_spawn_hooks + [arg]
+        yield context._replace(before_spawn_hooks=before_spawn_hooks)
 
     else:
         raise NotImplementedError  # pragma: no cover
@@ -461,6 +476,7 @@ IOContext = namedtuple("IOContext", [
     "env",
     "stdout_capture",
     "stderr_capture",
+    "before_spawn_hooks",
 ])
 
 
@@ -477,6 +493,7 @@ def new_iocontext():
         env=os.environ.copy(),
         stdout_capture=OutputCapture(),
         stderr_capture=OutputCapture(),
+        before_spawn_hooks=[],
     )
     try:
         yield context
