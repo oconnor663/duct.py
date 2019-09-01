@@ -1,6 +1,7 @@
 # coding=UTF-8
 
 import binascii
+import io
 import os
 import sys
 import tempfile
@@ -558,3 +559,22 @@ def test_before_spawn():
     out = echo_cmd("some").before_spawn(callback_inner).before_spawn(
         callback_outer).read()
     assert out == "some outer inner"
+
+
+def test_io_readers_writers():
+    stdout_writer = io.BytesIO()
+    stderr_writer = io.BytesIO()
+    output = cat_cmd()\
+        .stdin_reader(io.BytesIO(b"some stderr"))\
+        .stdout_to_stderr()\
+        .pipe(cat_cmd().stdin_reader(io.BytesIO(b"some stdout")))\
+        .stdout_writer(stdout_writer)\
+        .stderr_writer(stderr_writer)\
+        .stdout_capture()\
+        .stderr_capture()\
+        .run()
+    assert output.status == 0
+    assert output.stdout == b""
+    assert output.stderr == b""
+    assert stdout_writer.getvalue() == b"some stdout"
+    assert stderr_writer.getvalue() == b"some stderr"

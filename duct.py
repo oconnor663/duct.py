@@ -1,6 +1,8 @@
 from collections import namedtuple
 from contextlib import contextmanager
+import io
 import os
+import shutil
 import subprocess
 import threading
 
@@ -12,6 +14,12 @@ except ImportError:
         pass
 
 
+try:
+    # not defined in Python 2
+    PIPE_CLOSED_ERROR = BrokenPipeError
+except NameError:
+    PIPE_CLOSED_ERROR = IOError
+
 __all__ = ["cmd"]
 
 HAS_WAITID = "waitid" in dir(os)
@@ -22,23 +30,26 @@ PIPE = 1
 STDIN_BYTES = 2
 STDIN_PATH = 3
 STDIN_FILE = 4
-STDIN_NULL = 5
-STDOUT_PATH = 6
-STDOUT_FILE = 7
-STDOUT_NULL = 8
-STDOUT_CAPTURE = 9
-STDOUT_TO_STDERR = 10
-STDERR_PATH = 11
-STDERR_FILE = 12
-STDERR_NULL = 13
-STDERR_CAPTURE = 14
-STDERR_TO_STDOUT = 15
-DIR = 16
-ENV = 17
-ENV_REMOVE = 18
-FULL_ENV = 19
-UNCHECKED = 20
-BEFORE_SPAWN = 21
+STDIN_READER = 5
+STDIN_NULL = 6
+STDOUT_PATH = 7
+STDOUT_FILE = 8
+STDOUT_WRITER = 9
+STDOUT_NULL = 10
+STDOUT_CAPTURE = 11
+STDOUT_TO_STDERR = 12
+STDERR_PATH = 13
+STDERR_FILE = 14
+STDERR_WRITER = 15
+STDERR_NULL = 16
+STDERR_CAPTURE = 17
+STDERR_TO_STDOUT = 18
+DIR = 19
+ENV = 20
+ENV_REMOVE = 21
+FULL_ENV = 22
+UNCHECKED = 23
+BEFORE_SPAWN = 24
 
 NAMES = {
     CMD: "cmd",
@@ -46,14 +57,17 @@ NAMES = {
     STDIN_BYTES: "stdin_bytes",
     STDIN_PATH: "stdin_path",
     STDIN_FILE: "stdin_file",
+    STDIN_READER: "stdin_reader",
     STDIN_NULL: "stdin_null",
     STDOUT_PATH: "stdout_path",
     STDOUT_FILE: "stdout_file",
+    STDOUT_WRITER: "stdout_writer",
     STDOUT_NULL: "stdout_null",
     STDOUT_CAPTURE: "stdout_capture",
     STDOUT_TO_STDERR: "stdout_to_stderr",
     STDERR_PATH: "stderr_path",
     STDERR_FILE: "stderr_file",
+    STDERR_WRITER: "stderr_writer",
     STDERR_NULL: "stderr_null",
     STDERR_CAPTURE: "stderr_capture",
     STDERR_TO_STDOUT: "stderr_to_stdout",
@@ -114,6 +128,9 @@ class Expression:
     def stdin_file(self, file_):
         return Expression(STDIN_FILE, self, file_)
 
+    def stdin_reader(self, reader):
+        return Expression(STDIN_READER, self, reader)
+
     def stdin_null(self):
         return Expression(STDIN_NULL, self)
 
@@ -122,6 +139,9 @@ class Expression:
 
     def stdout_file(self, file_):
         return Expression(STDOUT_FILE, self, file_)
+
+    def stdout_writer(self, writer):
+        return Expression(STDOUT_WRITER, self, writer)
 
     def stdout_null(self):
         return Expression(STDOUT_NULL, self)
@@ -137,6 +157,9 @@ class Expression:
 
     def stderr_file(self, file_):
         return Expression(STDERR_FILE, self, file_)
+
+    def stderr_writer(self, writer):
+        return Expression(STDERR_WRITER, self, writer)
 
     def stderr_null(self):
         return Expression(STDERR_NULL, self)
@@ -232,7 +255,7 @@ def start_pipe(context, left_expr, right_expr):
 
 
 @contextmanager
-def modify_context(expression, context, handle_payload_cell):
+def modify_context(expression, context, payload_cell):
     arg = expression._payload
 
     if expression._type == STDIN_BYTES:
@@ -242,7 +265,8 @@ def modify_context(expression, context, handle_payload_cell):
             buf = arg
         else:
             raise TypeError("Not a valid stdin_bytes parameter: " + repr(arg))
-        with spawn_input_writer(buf, handle_payload_cell) as read_pipe:
+        input_reader = io.BytesIO(buf)
+        with start_input_thread(input_reader, payload_cell) as read_pipe:
             yield context._replace(stdin=read_pipe)
 
     elif expression._type == STDIN_PATH:
@@ -251,6 +275,10 @@ def modify_context(expression, context, handle_payload_cell):
 
     elif expression._type == STDIN_FILE:
         yield context._replace(stdin=arg)
+
+    elif expression._type == STDIN_READER:
+        with start_input_thread(arg, payload_cell) as read_pipe:
+            yield context._replace(stdin=read_pipe)
 
     elif expression._type == STDIN_NULL:
         with open_devnull("rb") as f:
@@ -262,6 +290,10 @@ def modify_context(expression, context, handle_payload_cell):
 
     elif expression._type == STDOUT_FILE:
         yield context._replace(stdout=arg)
+
+    elif expression._type == STDOUT_WRITER:
+        with start_output_thread(arg, payload_cell) as write_pipe:
+            yield context._replace(stdout=write_pipe)
 
     elif expression._type == STDOUT_NULL:
         with open_devnull("wb") as f:
@@ -279,6 +311,10 @@ def modify_context(expression, context, handle_payload_cell):
 
     elif expression._type == STDERR_FILE:
         yield context._replace(stderr=arg)
+
+    elif expression._type == STDERR_WRITER:
+        with start_output_thread(arg, payload_cell) as write_pipe:
+            yield context._replace(stderr=write_pipe)
 
     elif expression._type == STDERR_NULL:
         with open_devnull("wb") as f:
@@ -389,10 +425,11 @@ def wait(handle, blocking):
     if blocking:
         assert status is not None
 
-    if handle._type == STDIN_BYTES:
-        input_writer_thread = handle._payload
+    if handle._type in (STDIN_BYTES, STDIN_READER, STDOUT_WRITER,
+                        STDERR_WRITER):
+        io_thread = handle._payload
         if status is not None:
-            input_writer_thread.join()
+            io_thread.join()
     elif handle._type == UNCHECKED:
         if status is not None:
             status = status._replace(checked=False)
@@ -532,15 +569,8 @@ def open_path(path_or_string, mode):
         yield f
 
 
-try:
-    # not defined in Python 2
-    PIPE_CLOSED_ERROR = BrokenPipeError
-except NameError:
-    PIPE_CLOSED_ERROR = IOError
-
-
 @contextmanager
-def spawn_input_writer(input_bytes, writer_thread_cell):
+def start_input_thread(input_reader, writer_thread_cell):
     read, write = open_pipe()
 
     def write_thread():
@@ -549,7 +579,7 @@ def spawn_input_writer(input_bytes, writer_thread_cell):
             # Linux), and then the program on the other end quits before
             # reading everything, the write will throw. Catch this error.
             try:
-                write.write(input_bytes)
+                shutil.copyfileobj(input_reader, write)
             except PIPE_CLOSED_ERROR:
                 pass
 
@@ -558,6 +588,21 @@ def spawn_input_writer(input_bytes, writer_thread_cell):
     thread.start()
     with read:
         yield read
+
+
+@contextmanager
+def start_output_thread(output_writer, reader_thread_cell):
+    read, write = open_pipe()
+
+    def read_thread():
+        with read:
+            shutil.copyfileobj(read, output_writer)
+
+    thread = ThreadWithReturn(read_thread)
+    reader_thread_cell[0] = thread
+    thread.start()
+    with write:
+        yield write
 
 
 # Avoid spawning output reader threads unless the caller requests to capture
