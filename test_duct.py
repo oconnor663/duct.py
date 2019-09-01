@@ -422,18 +422,20 @@ def test_string_mode_returns_unicode():
 
 def test_repr_round_trip():
     '''Check that our repr() output is exactly the same as the syntax used to
-    create the expression. Note that expression_repr() sorts keywords
-    alphabetically, so we need to do the same here. Also, use single-quoted
-    string values, because that's what repr() emits, and don't use bytes
-    literals, because Python 2 won't emit them.'''
+    create the expression. Use single-quoted string values, because that's what
+    repr() emits, and don't use bytes literals, because Python 2 won't emit
+    them.'''
 
     expressions = [
+        "cmd('foo').stdin_bytes('a').stdout_capture().stderr_capture()",
         "cmd('foo').stdin_path('a').stdout_path('b').stderr_path('c')",
-        "cmd('foo').unchecked().env('a', 'b').full_env({})",
-        "cmd('foo').pipe(cmd('bar').stdout_null())",
-        "cmd('foo').stdout_null().stdout_to_stderr()",
-        "cmd('foo').stderr_null().stderr_to_stdout()",
-        "cmd('foo').dir('stuff')",
+        "cmd('foo').stdin_file(0).stdout_file(0).stderr_file(0)",
+        "cmd('foo').stdin_reader(0).stdout_writer(0).stderr_writer(0)",
+        "cmd('foo').stdin_null().stdout_null().stderr_null()",
+        "cmd('foo').stdout_to_stderr().stderr_to_stdout()",
+        "cmd('foo').stdout_stderr_swap().before_spawn(0)",
+        "cmd('foo').env('a', 'b').full_env({}).env_remove('c')",
+        "cmd('foo').pipe(cmd('bar').dir('stuff').unchecked())",
     ]
     for expression in expressions:
         assert repr(eval(expression)) == expression
