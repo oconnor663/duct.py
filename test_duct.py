@@ -271,11 +271,11 @@ def test_stdin():
     with open(temp, 'w') as f:
         f.write('foo')
     # with a file path
-    out = replace('o', 'a').stdin(temp).read()
+    out = replace('o', 'a').stdin_path(temp).read()
     assert 'faa' == out
     # with a Path path
     if has_pathlib:
-        out = replace('o', 'b').stdin(Path(temp)).read()
+        out = replace('o', 'b').stdin_path(Path(temp)).read()
         assert 'fbb' == out
     # with an open file
     with open(temp) as f:
@@ -289,13 +289,13 @@ def test_stdin():
 def test_stdout():
     # with a file path
     temp = mktemp()
-    echo_cmd("hi").stdout(temp).run()
+    echo_cmd("hi").stdout_path(temp).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with a Path path
     if has_pathlib:
         temp = mktemp()
-        echo_cmd("hi").stdout(Path(temp)).run()
+        echo_cmd("hi").stdout_path(Path(temp)).run()
         with open(temp) as f:
             assert 'hi\n' == f.read()
     # with an open file
@@ -317,13 +317,13 @@ def test_stdout():
 def test_stderr():
     # with a file path
     temp = mktemp()
-    echo_cmd("hi").stdout_to_stderr().stderr(temp).run()
+    echo_cmd("hi").stdout_to_stderr().stderr_path(temp).run()
     with open(temp) as f:
         assert 'hi\n' == f.read()
     # with a Path path
     if has_pathlib:
         temp = mktemp()
-        echo_cmd("hi").stdout_to_stderr().stderr(Path(temp)).run()
+        echo_cmd("hi").stdout_to_stderr().stderr_path(Path(temp)).run()
         with open(temp) as f:
             assert 'hi\n' == f.read()
     # with an open file
@@ -395,11 +395,11 @@ def test_invalid_io_args():
     with raises(TypeError):
         cmd('foo').input(1.0).run()
     with raises(TypeError):
-        cmd('foo').stdin(1.0).run()
+        cmd('foo').stdin_path(1.0).run()
     with raises(TypeError):
-        cmd('foo').stdout(1.0).run()
+        cmd('foo').stdout_path(1.0).run()
     with raises(TypeError):
-        cmd('foo').stderr(1.0).run()
+        cmd('foo').stderr_path(1.0).run()
 
 
 def test_write_error_in_input_thread():
@@ -426,8 +426,9 @@ def test_repr_round_trip():
     literals, because Python 2 won't emit them.'''
 
     expressions = [
+        "cmd('foo').stdin_path('a').stdout_path('b').stderr_path('c')",
         "cmd('foo').unchecked().env('a', 'b').full_env({})",
-        "cmd('foo').pipe(cmd('bar'))",
+        "cmd('foo').pipe(cmd('bar').stdout_null())",
         "cmd('foo').stdout_null().stdout_to_stderr()",
         "cmd('foo').stderr_null().stderr_to_stdout()",
         "cmd('foo').dir('stuff')",

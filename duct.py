@@ -20,15 +20,15 @@ HAS_WAITID = "waitid" in dir(os)
 CMD = 0
 PIPE = 1
 INPUT = 2
-STDIN = 3
+STDIN_PATH = 3
 STDIN_FILE = 4
 STDIN_NULL = 5
-STDOUT = 6
+STDOUT_PATH = 6
 STDOUT_FILE = 7
 STDOUT_NULL = 8
 STDOUT_CAPTURE = 9
 STDOUT_TO_STDERR = 10
-STDERR = 11
+STDERR_PATH = 11
 STDERR_FILE = 12
 STDERR_NULL = 13
 STDERR_CAPTURE = 14
@@ -43,15 +43,15 @@ NAMES = {
     CMD: "cmd",
     PIPE: "pipe",
     INPUT: "input",
-    STDIN: "stdin",
+    STDIN_PATH: "stdin_path",
     STDIN_FILE: "stdin_file",
     STDIN_NULL: "stdin_null",
-    STDOUT: "stdout",
+    STDOUT_PATH: "stdout_path",
     STDOUT_FILE: "stdout_file",
     STDOUT_NULL: "stdout_null",
     STDOUT_CAPTURE: "stdout_capture",
     STDOUT_TO_STDERR: "stdout_to_stderr",
-    STDERR: "stderr",
+    STDERR_PATH: "stderr_path",
     STDERR_FILE: "stderr_file",
     STDERR_NULL: "stderr_null",
     STDERR_CAPTURE: "stderr_capture",
@@ -106,8 +106,8 @@ class Expression:
     def input(self, buf):
         return Expression(INPUT, self, buf)
 
-    def stdin(self, path):
-        return Expression(STDIN, self, path)
+    def stdin_path(self, path):
+        return Expression(STDIN_PATH, self, path)
 
     def stdin_file(self, file_):
         return Expression(STDIN_FILE, self, file_)
@@ -115,8 +115,8 @@ class Expression:
     def stdin_null(self):
         return Expression(STDIN_NULL, self)
 
-    def stdout(self, path):
-        return Expression(STDOUT, self, path)
+    def stdout_path(self, path):
+        return Expression(STDOUT_PATH, self, path)
 
     def stdout_file(self, file_):
         return Expression(STDOUT_FILE, self, file_)
@@ -130,8 +130,8 @@ class Expression:
     def stdout_to_stderr(self):
         return Expression(STDOUT_TO_STDERR, self)
 
-    def stderr(self, path):
-        return Expression(STDERR, self, path)
+    def stderr_path(self, path):
+        return Expression(STDERR_PATH, self, path)
 
     def stderr_file(self, file_):
         return Expression(STDERR_FILE, self, file_)
@@ -235,7 +235,7 @@ def modify_context(expression, context, handle_payload_cell):
         with spawn_input_writer(buf, handle_payload_cell) as read_pipe:
             yield context._replace(stdin=read_pipe)
 
-    elif expression._type == STDIN:
+    elif expression._type == STDIN_PATH:
         with open_path(arg, "rb") as f:
             yield context._replace(stdin=f)
 
@@ -246,7 +246,7 @@ def modify_context(expression, context, handle_payload_cell):
         with open_devnull("rb") as f:
             yield context._replace(stdin=f)
 
-    elif expression._type == STDOUT:
+    elif expression._type == STDOUT_PATH:
         with open_path(arg, "wb") as f:
             yield context._replace(stdout=f)
 
@@ -263,7 +263,7 @@ def modify_context(expression, context, handle_payload_cell):
     elif expression._type == STDOUT_TO_STDERR:
         yield context._replace(stdout=context.stderr)
 
-    elif expression._type == STDERR:
+    elif expression._type == STDERR_PATH:
         with open_path(arg, "wb") as f:
             yield context._replace(stderr=f)
 
@@ -467,7 +467,7 @@ IOContext = namedtuple("IOContext", [
 @contextmanager
 def new_iocontext():
     # Hardcode the standard file descriptors. We can't rely on None here,
-    # becase STDOUT/STDERR swapping needs to work.
+    # becase stdout/stderr swapping needs to work.
     context = IOContext(
         stdin=0,
         stdout=1,
