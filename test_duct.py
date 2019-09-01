@@ -134,7 +134,7 @@ def test_start():
 
 
 def test_bytes():
-    out = head_bytes(10).input(b'\x00' * 100).read()
+    out = head_bytes(10).stdin_bytes(b'\x00' * 100).read()
     assert '\x00' * 10 == out
 
 
@@ -173,7 +173,7 @@ def test_unchecked_with_pipe():
 
 
 def test_pipe():
-    out = head_bytes(3).pipe(replace('x', 'a')).input("xxxxxxxxxx").read()
+    out = head_bytes(3).pipe(replace('x', 'a')).stdin_bytes("xxxxxxxxxx").read()
     assert "aaa" == out
 
 
@@ -261,8 +261,8 @@ def test_full_env():
     assert "" == echo_x().full_env(clear_env).env('x', 'foo').read()
 
 
-def test_input():
-    out = replace('o', 'a').input("foo").read()
+def test_stdin_bytes():
+    out = replace('o', 'a').stdin_bytes("foo").read()
     assert 'faa' == out
 
 
@@ -393,7 +393,7 @@ def test_ThreadWithReturn_reraises_exceptions():
 
 def test_invalid_io_args():
     with raises(TypeError):
-        cmd('foo').input(1.0).run()
+        cmd('foo').stdin_bytes(1.0).run()
     with raises(TypeError):
         cmd('foo').stdin_path(1.0).run()
     with raises(TypeError):
@@ -408,7 +408,7 @@ def test_write_error_in_input_thread():
     the pipe, and then that write will fail. Test that we catch this
     BrokenPipeError.'''
     test_input = '\x00' * 100 * 1000
-    true().input(test_input).run()
+    true().stdin_bytes(test_input).run()
 
 
 def test_string_mode_returns_unicode():
@@ -496,17 +496,17 @@ def test_unicode():
     # and read UTF-8 output.
     in_str = u"日本語"
     cat = head_bytes(-1)
-    out = cat.input(in_str).read()
+    out = cat.stdin_bytes(in_str).read()
     assert out == u"日本語"
 
-    output = cat.input(in_str).stdout_capture().run()
+    output = cat.stdin_bytes(in_str).stdout_capture().run()
     assert output.stdout == in_str.encode('utf8')
 
 
 def test_wait():
     input_bytes = b"some really nice input"
     take = 10
-    handle = cat_cmd().input(input_bytes).pipe(
+    handle = cat_cmd().stdin_bytes(input_bytes).pipe(
         head_bytes(take)).stdout_capture().start()
     output = handle.wait()
     assert output.status == 0

@@ -19,7 +19,7 @@ HAS_WAITID = "waitid" in dir(os)
 # Expression and handle types.
 CMD = 0
 PIPE = 1
-INPUT = 2
+STDIN_BYTES = 2
 STDIN_PATH = 3
 STDIN_FILE = 4
 STDIN_NULL = 5
@@ -42,7 +42,7 @@ UNCHECKED = 20
 NAMES = {
     CMD: "cmd",
     PIPE: "pipe",
-    INPUT: "input",
+    STDIN_BYTES: "stdin_bytes",
     STDIN_PATH: "stdin_path",
     STDIN_FILE: "stdin_file",
     STDIN_NULL: "stdin_null",
@@ -103,8 +103,8 @@ class Expression:
     def pipe(self, right_side):
         return Expression(PIPE, None, (self, right_side))
 
-    def input(self, buf):
-        return Expression(INPUT, self, buf)
+    def stdin_bytes(self, buf):
+        return Expression(STDIN_BYTES, self, buf)
 
     def stdin_path(self, path):
         return Expression(STDIN_PATH, self, path)
@@ -225,13 +225,13 @@ def start_pipe(context, left_expr, right_expr):
 def modify_context(expression, context, handle_payload_cell):
     arg = expression._payload
 
-    if expression._type == INPUT:
+    if expression._type == STDIN_BYTES:
         if is_unicode(arg):
             buf = encode_with_universal_newlines(arg)
         elif is_bytes(arg):
             buf = arg
         else:
-            raise TypeError("Not a valid input parameter: " + repr(arg))
+            raise TypeError("Not a valid stdin_bytes parameter: " + repr(arg))
         with spawn_input_writer(buf, handle_payload_cell) as read_pipe:
             yield context._replace(stdin=read_pipe)
 
@@ -374,7 +374,7 @@ def wait(handle, blocking):
     if blocking:
         assert status is not None
 
-    if handle._type == INPUT:
+    if handle._type == STDIN_BYTES:
         input_writer_thread = handle._payload
         if status is not None:
             input_writer_thread.join()
