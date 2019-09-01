@@ -591,3 +591,45 @@ def test_stdout_stderr_swap():
     assert output.status == 0
     assert output.stdout == b"err" + NEWLINE
     assert output.stderr == b"out" + NEWLINE
+
+
+def test_reader():
+    reader = cat_cmd().stdin_bytes("abc\ndef\n123").reader()
+    # Readlines is provided by BufferedIOBase, so this tests that we've
+    # inherited from it correctly.
+    lines = reader.readlines()
+    assert lines == [b"abc\n", b"def\n", b"123"]
+    assert reader._read_pipe is None, "has been awaited"
+
+
+def test_reader_eof():
+    reader = cat_cmd().stdin_bytes("abc\ndef\n123").reader()
+    assert reader._read_pipe is not None, "not awaited yet"
+    reader.read()
+    assert reader._read_pipe is None, "has been awaited"
+
+
+def test_reader_positive_size():
+    input_bytes = b"some stuff"
+    reader = cat_cmd().stdin_bytes(input_bytes).reader()
+    bytes_read = 0
+    while bytes_read < len(input_bytes):
+        reader.read(1)
+        bytes_read += 1
+    # The child hasn't been awaited yet, because although we happen to know
+    # we're supposed to be at EOF now, we haven't actually read it yet.
+    assert reader._read_pipe is not None, "not awaited yet"
+
+    # Now read EOF and check that everything gets cleaned up.
+    assert reader.read(1) == b""
+    assert reader._read_pipe is None, "has been awaited"
+
+
+def test_reader_kill():
+    reader = sleep_cmd(1000000).reader()
+    output = reader.kill_and_wait()
+    assert output.status != 0
+    assert output.stdout is None
+    assert output.stderr is None
+    assert reader._read_pipe is None
+    assert reader.read() == b""

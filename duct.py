@@ -96,12 +96,28 @@ class Expression:
         return repr_expression(self)
 
     def start(self):
-        '''Equivalent to `run`, but instead of blocking the current thread,
-        return a WaitHandle that doesn't block until `wait` is called. This is
-        currently implemented with a simple background thread, though in theory
-        it could avoid using threads in most cases.'''
+        '''Start executing the expression and return a WaitHandle object.
+        Calling `.start().wait()` is equivalent to `.run()`.'''
         with new_iocontext() as context:
-            return start_expression(self, context)
+            handle = start_expression(self, context)
+            context.stdout_capture_context.start_thread_if_needed()
+            context.stderr_capture_context.start_thread_if_needed()
+            return handle
+
+    def reader(self):
+        '''Start executing the expression with its stdout captured, and return
+        a ReaderHandle object wrapping the capture pipe. This object inherits
+        from io.BufferedIOBase, and you can call `read` and related methods on
+        it. Once the reader reaches EOF, it automatically closes the pipe and
+        calls `wait` on the underlying child process(es). Note that while
+        `start` uses background threads to do IO, the ReaderHandle doesn't read
+        from the capture pipe until `read` is called. If the caller doesn't
+        read promptly, this may cause child processes to block.'''
+        with new_iocontext() as context:
+            handle = start_expression(self.stdout_capture(), context)
+            read_pipe = context.stdout_capture_context.get_read_pipe()
+            context.stderr_capture_context.start_thread_if_needed()
+            return ReaderHandle(handle, read_pipe)
 
     def run(self):
         '''Execute the expression and return an Output object, which includes
@@ -109,13 +125,13 @@ class Expression:
         status is non-zero.'''
         return self.start().wait()
 
-    # TODO: reimplement this in terms of reader
     def read(self):
         '''Execute the expression and capture its output, similar to backticks
-        or $() in the shell. This is a wrapper around run() which captures
-        stdout, decodes it, trims it, and returns it directly.'''
-        output = self.stdout_capture().run()
-        stdout_str = decode_with_universal_newlines(output.stdout)
+        or $() in the shell. This is a wrapper around reader() which reads to
+        EOF, decodes UTF-8, trims newlines, and returns the resulting
+        string.'''
+        stdout_bytes = self.reader().read()
+        stdout_str = decode_with_universal_newlines(stdout_bytes)
         return stdout_str.rstrip('\n')
 
     def pipe(self, right_side):
@@ -212,8 +228,8 @@ def start_expression(expression, context):
                                             modified_context)
 
     return WaitHandle(expression._type, handle_inner, handle_payload_cell[0],
-                      str(expression), context.stdout_capture,
-                      context.stderr_capture)
+                      str(expression), context.stdout_capture_context,
+                      context.stderr_capture_context)
 
 
 def start_cmd(context, prog, args):
@@ -305,7 +321,8 @@ def modify_context(expression, context, payload_cell):
             yield context._replace(stdout=f)
 
     elif expression._type == STDOUT_CAPTURE:
-        yield context._replace(stdout=context.stdout_capture.get_write_pipe())
+        yield context._replace(
+            stdout=context.stdout_capture_context.get_write_pipe())
 
     elif expression._type == STDOUT_TO_STDERR:
         yield context._replace(stdout=context.stderr)
@@ -326,7 +343,8 @@ def modify_context(expression, context, payload_cell):
             yield context._replace(stderr=f)
 
     elif expression._type == STDERR_CAPTURE:
-        yield context._replace(stderr=context.stderr_capture.get_write_pipe())
+        yield context._replace(
+            stderr=context.stderr_capture_context.get_write_pipe())
 
     elif expression._type == STDERR_TO_STDOUT:
         yield context._replace(stderr=context.stdout)
@@ -385,14 +403,14 @@ class StatusError(subprocess.CalledProcessError):
 
 
 class WaitHandle:
-    def __init__(self, _type, inner, payload, expression_str, stdout_capture,
-                 stderr_capture):
+    def __init__(self, _type, inner, payload, expression_str,
+                 stdout_capture_context, stderr_capture_context):
         self._type = _type
         self._inner = inner
         self._payload = payload
         self._expression_str = expression_str
-        self._stdout_capture = stdout_capture
-        self._stderr_capture = stderr_capture
+        self._stdout_capture_context = stdout_capture_context
+        self._stderr_capture_context = stderr_capture_context
 
     def wait(self):
         status = wait(self, True)
@@ -406,8 +424,8 @@ class WaitHandle:
 
     def _finish_output(self, status):
         assert status is not None
-        stdout = self._stdout_capture.join()
-        stderr = self._stderr_capture.join()
+        stdout = self._stdout_capture_context.join_thread_if_needed()
+        stderr = self._stderr_capture_context.join_thread_if_needed()
         output = Output(status.code, stdout, stderr)
         if is_checked_error(status):
             raise StatusError(output, self._expression_str)
@@ -519,8 +537,8 @@ IOContext = namedtuple("IOContext", [
     "stderr",
     "dir",
     "env",
-    "stdout_capture",
-    "stderr_capture",
+    "stdout_capture_context",
+    "stderr_capture_context",
     "before_spawn_hooks",
 ])
 
@@ -536,15 +554,15 @@ def new_iocontext():
         dir=os.getcwd(),
         # Pretend this dictionary is immutable please.
         env=os.environ.copy(),
-        stdout_capture=OutputCapture(),
-        stderr_capture=OutputCapture(),
+        stdout_capture_context=OutputCaptureContext(),
+        stderr_capture_context=OutputCaptureContext(),
         before_spawn_hooks=[],
     )
     try:
         yield context
     finally:
-        context.stdout_capture.close_write_pipe()
-        context.stderr_capture.close_write_pipe()
+        context.stdout_capture_context.close_write_pipe_if_needed()
+        context.stderr_capture_context.close_write_pipe_if_needed()
 
 
 ExecStatus = namedtuple("ExecStatus", ["code", "checked"])
@@ -613,37 +631,42 @@ def start_output_thread(output_writer, reader_thread_cell):
         yield write
 
 
-# Avoid spawning output reader threads unless the caller requests to capture
-# output. The close_write_pipe() method is called at the end of start(), so
-# that the write pipe is closed. Then the join() method is called during
-# wait(), to join the reader thread and retrieve the collected output.
-#
-# Note .read() and .reader() *don't* use reader threads from this class.
-# Instead, in those cases, the caller reads synchronously.
-class OutputCapture:
+# The stdout_capture() and stderr_capture() pipes are shared by all
+# sub-expressions, but we don't want to open them if nothing is going to be
+# captured. Also we don't want to spawn background reader threads when nothing
+# is captured, or when the calling thread will be reading. This type handles
+# the bookkeeping for all of that.
+class OutputCaptureContext:
     def __init__(self):
+        self._read_pipe = None
         self._write_pipe = None
         self._thread = None
 
-    # This spawns the reader thread lazily if an expression requests it.
     def get_write_pipe(self):
-        if self._thread is None:
-            read_pipe, self._write_pipe = open_pipe()
-
-            def read_thread():
-                with read_pipe:
-                    return read_pipe.read()
-
-            self._thread = ThreadWithReturn(read_thread)
-            self._thread.start()
-
+        if self._write_pipe is None:
+            self._read_pipe, self._write_pipe = open_pipe()
         return self._write_pipe
 
-    def close_write_pipe(self):
+    def get_read_pipe(self):
+        assert self._read_pipe is not None
+        return self._read_pipe
+
+    def close_write_pipe_if_needed(self):
         if self._write_pipe is not None:
             self._write_pipe.close()
 
-    def join(self):
+    def start_thread_if_needed(self):
+        if self._read_pipe is None:
+            return
+
+        def read_fn():
+            with self._read_pipe:
+                return self._read_pipe.read()
+
+        self._thread = ThreadWithReturn(read_fn)
+        self._thread.start()
+
+    def join_thread_if_needed(self):
         if self._thread is not None:
             return self._thread.join()
         else:
@@ -887,3 +910,39 @@ class SharedChild:
         with self._status_lock:
             if self._status is None:
                 self._child.kill()
+
+
+class ReaderHandle(io.BufferedIOBase):
+    """A stdout reader that automatically closes its read pipe and awaits its
+    child processes once EOF is reached. Note that if the caller leaks this
+    object, the child processes will become zombies, and the read pipe will not
+    be closed promptly. To guard against this, use a try-finally block with
+    `kill_and_wait` in the finally clause, which will also close the read pipe.
+    Note that this object is not a context manager, because killing child
+    processes implicitly on context exit would be too surprising. Likewise this
+    object doesn't implement close, because it would be ambiguous whether the
+    child processe were still running."""
+    def __init__(self, handle, read_pipe):
+        self._handle = handle
+        self._read_pipe = read_pipe
+
+    def read(self, size=-1):
+        if self._read_pipe is None:
+            return b""
+        is_zero_size = size == 0
+        is_positive_size = type(size) is int and size > 0
+        is_read_to_end = not is_zero_size and not is_positive_size
+        ret = self._read_pipe.read(size)
+        if is_read_to_end or (is_positive_size and ret == b""):
+            self._close_pipe()
+            self._handle.wait()
+        return ret
+
+    def _close_pipe(self):
+        if self._read_pipe is not None:
+            self._read_pipe.close()
+            self._read_pipe = None
+
+    def kill_and_wait(self):
+        self._close_pipe()
+        return self._handle.kill_and_wait()
