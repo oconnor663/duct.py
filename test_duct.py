@@ -578,3 +578,16 @@ def test_io_readers_writers():
     assert output.stderr == b""
     assert stdout_writer.getvalue() == b"some stdout"
     assert stderr_writer.getvalue() == b"some stderr"
+
+
+def test_stdout_stderr_swap():
+    output = echo_cmd("err")\
+        .stdout_to_stderr()\
+        .pipe(echo_cmd("out"))\
+        .stdout_stderr_swap()\
+        .stdout_capture()\
+        .stderr_capture()\
+        .run()
+    assert output.status == 0
+    assert output.stdout == b"err" + NEWLINE
+    assert output.stderr == b"out" + NEWLINE

@@ -44,12 +44,13 @@ STDERR_WRITER = 15
 STDERR_NULL = 16
 STDERR_CAPTURE = 17
 STDERR_TO_STDOUT = 18
-DIR = 19
-ENV = 20
-ENV_REMOVE = 21
-FULL_ENV = 22
-UNCHECKED = 23
-BEFORE_SPAWN = 24
+STDOUT_STDERR_SWAP = 19
+DIR = 20
+ENV = 21
+ENV_REMOVE = 22
+FULL_ENV = 23
+UNCHECKED = 24
+BEFORE_SPAWN = 25
 
 NAMES = {
     CMD: "cmd",
@@ -71,6 +72,7 @@ NAMES = {
     STDERR_NULL: "stderr_null",
     STDERR_CAPTURE: "stderr_capture",
     STDERR_TO_STDOUT: "stderr_to_stdout",
+    STDOUT_STDERR_SWAP: "stdout_stderr_swap",
     DIR: "dir",
     ENV: "env",
     ENV_REMOVE: "env_remove",
@@ -169,6 +171,9 @@ class Expression:
 
     def stderr_to_stdout(self):
         return Expression(STDERR_TO_STDOUT, self)
+
+    def stdout_stderr_swap(self):
+        return Expression(STDOUT_STDERR_SWAP, self)
 
     def dir(self, path):
         return Expression(DIR, self, path)
@@ -325,6 +330,9 @@ def modify_context(expression, context, payload_cell):
 
     elif expression._type == STDERR_TO_STDOUT:
         yield context._replace(stderr=context.stdout)
+
+    elif expression._type == STDOUT_STDERR_SWAP:
+        yield context._replace(stdout=context.stderr, stderr=context.stdout)
 
     elif expression._type == DIR:
         yield context._replace(dir=stringify_if_path(arg))
