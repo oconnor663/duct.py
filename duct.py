@@ -23,32 +23,30 @@ except NameError:
 HAS_WAITID = "waitid" in dir(os)
 
 # Expression and handle types.
+# TODO: Replace this with enum when we no longer support Python 2.
 CMD = 0
 PIPE = 1
 STDIN_BYTES = 2
 STDIN_PATH = 3
 STDIN_FILE = 4
-STDIN_READER = 5
-STDIN_NULL = 6
-STDOUT_PATH = 7
-STDOUT_FILE = 8
-STDOUT_WRITER = 9
-STDOUT_NULL = 10
-STDOUT_CAPTURE = 11
-STDOUT_TO_STDERR = 12
-STDERR_PATH = 13
-STDERR_FILE = 14
-STDERR_WRITER = 15
-STDERR_NULL = 16
-STDERR_CAPTURE = 17
-STDERR_TO_STDOUT = 18
-STDOUT_STDERR_SWAP = 19
-DIR = 20
-ENV = 21
-ENV_REMOVE = 22
-FULL_ENV = 23
-UNCHECKED = 24
-BEFORE_SPAWN = 25
+STDIN_NULL = 5
+STDOUT_PATH = 6
+STDOUT_FILE = 7
+STDOUT_NULL = 8
+STDOUT_CAPTURE = 9
+STDOUT_TO_STDERR = 10
+STDERR_PATH = 11
+STDERR_FILE = 12
+STDERR_NULL = 13
+STDERR_CAPTURE = 14
+STDERR_TO_STDOUT = 15
+STDOUT_STDERR_SWAP = 16
+DIR = 17
+ENV = 18
+ENV_REMOVE = 19
+FULL_ENV = 20
+UNCHECKED = 21
+BEFORE_SPAWN = 22
 
 NAMES = {
     CMD: "cmd",
@@ -56,17 +54,14 @@ NAMES = {
     STDIN_BYTES: "stdin_bytes",
     STDIN_PATH: "stdin_path",
     STDIN_FILE: "stdin_file",
-    STDIN_READER: "stdin_reader",
     STDIN_NULL: "stdin_null",
     STDOUT_PATH: "stdout_path",
     STDOUT_FILE: "stdout_file",
-    STDOUT_WRITER: "stdout_writer",
     STDOUT_NULL: "stdout_null",
     STDOUT_CAPTURE: "stdout_capture",
     STDOUT_TO_STDERR: "stdout_to_stderr",
     STDERR_PATH: "stderr_path",
     STDERR_FILE: "stderr_file",
-    STDERR_WRITER: "stderr_writer",
     STDERR_NULL: "stderr_null",
     STDERR_CAPTURE: "stderr_capture",
     STDERR_TO_STDOUT: "stderr_to_stdout",
@@ -173,9 +168,6 @@ class Expression:
     def stdin_file(self, file_):
         return Expression(STDIN_FILE, self, file_)
 
-    def stdin_reader(self, reader):
-        return Expression(STDIN_READER, self, reader)
-
     def stdin_null(self):
         return Expression(STDIN_NULL, self)
 
@@ -184,9 +176,6 @@ class Expression:
 
     def stdout_file(self, file_):
         return Expression(STDOUT_FILE, self, file_)
-
-    def stdout_writer(self, writer):
-        return Expression(STDOUT_WRITER, self, writer)
 
     def stdout_null(self):
         return Expression(STDOUT_NULL, self)
@@ -202,9 +191,6 @@ class Expression:
 
     def stderr_file(self, file_):
         return Expression(STDERR_FILE, self, file_)
-
-    def stderr_writer(self, writer):
-        return Expression(STDERR_WRITER, self, writer)
 
     def stderr_null(self):
         return Expression(STDERR_NULL, self)
@@ -324,10 +310,6 @@ def modify_context(expression, context, payload_cell):
     elif expression._type == STDIN_FILE:
         yield context._replace(stdin=arg)
 
-    elif expression._type == STDIN_READER:
-        with start_input_thread(arg, payload_cell) as read_pipe:
-            yield context._replace(stdin=read_pipe)
-
     elif expression._type == STDIN_NULL:
         with open_devnull("rb") as f:
             yield context._replace(stdin=f)
@@ -338,10 +320,6 @@ def modify_context(expression, context, payload_cell):
 
     elif expression._type == STDOUT_FILE:
         yield context._replace(stdout=arg)
-
-    elif expression._type == STDOUT_WRITER:
-        with start_output_thread(arg, payload_cell) as write_pipe:
-            yield context._replace(stdout=write_pipe)
 
     elif expression._type == STDOUT_NULL:
         with open_devnull("wb") as f:
@@ -360,10 +338,6 @@ def modify_context(expression, context, payload_cell):
 
     elif expression._type == STDERR_FILE:
         yield context._replace(stderr=arg)
-
-    elif expression._type == STDERR_WRITER:
-        with start_output_thread(arg, payload_cell) as write_pipe:
-            yield context._replace(stderr=write_pipe)
 
     elif expression._type == STDERR_NULL:
         with open_devnull("wb") as f:
@@ -487,8 +461,7 @@ def wait_on_status(handle, blocking):
     if blocking:
         assert status is not None
 
-    if handle._type in (STDIN_BYTES, STDIN_READER, STDOUT_WRITER,
-                        STDERR_WRITER):
+    if handle._type == STDIN_BYTES:
         io_thread = handle._payload
         if status is not None:
             io_thread.join()
@@ -650,21 +623,6 @@ def start_input_thread(input_reader, writer_thread_cell):
     thread.start()
     with read:
         yield read
-
-
-@contextmanager
-def start_output_thread(output_writer, reader_thread_cell):
-    read, write = open_pipe()
-
-    def read_thread():
-        with read:
-            shutil.copyfileobj(read, output_writer)
-
-    thread = ThreadWithReturn(read_thread)
-    reader_thread_cell[0] = thread
-    thread.start()
-    with write:
-        yield write
 
 
 # The stdout_capture() and stderr_capture() pipes are shared by all

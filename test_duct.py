@@ -430,7 +430,6 @@ def test_repr_round_trip():
         "cmd('foo').stdin_bytes('a').stdout_capture().stderr_capture()",
         "cmd('foo').stdin_path('a').stdout_path('b').stderr_path('c')",
         "cmd('foo').stdin_file(0).stdout_file(0).stderr_file(0)",
-        "cmd('foo').stdin_reader(0).stdout_writer(0).stderr_writer(0)",
         "cmd('foo').stdin_null().stdout_null().stderr_null()",
         "cmd('foo').stdout_to_stderr().stderr_to_stdout()",
         "cmd('foo').stdout_stderr_swap().before_spawn(0)",
@@ -561,25 +560,6 @@ def test_before_spawn():
     out = echo_cmd("some").before_spawn(callback_inner).before_spawn(
         callback_outer).read()
     assert out == "some outer inner"
-
-
-def test_io_readers_writers():
-    stdout_writer = io.BytesIO()
-    stderr_writer = io.BytesIO()
-    output = cat_cmd()\
-        .stdin_reader(io.BytesIO(b"some stderr"))\
-        .stdout_to_stderr()\
-        .pipe(cat_cmd().stdin_reader(io.BytesIO(b"some stdout")))\
-        .stdout_writer(stdout_writer)\
-        .stderr_writer(stderr_writer)\
-        .stdout_capture()\
-        .stderr_capture()\
-        .run()
-    assert output.status == 0
-    assert output.stdout == b""
-    assert output.stderr == b""
-    assert stdout_writer.getvalue() == b"some stdout"
-    assert stderr_writer.getvalue() == b"some stderr"
 
 
 def test_stdout_stderr_swap():
