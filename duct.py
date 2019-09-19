@@ -395,10 +395,16 @@ def modify_context(expression, context, payload_cell):
         raise NotImplementedError  # pragma: no cover
 
 
-Output = namedtuple('Output', ['status', 'stdout', 'stderr'])
+class Output(namedtuple('Output', ['status', 'stdout', 'stderr'])):
+    """The return type of :func:`run` and :func:`wait`.
+    """
+    __slots__ = ()
 
 
 class StatusError(subprocess.CalledProcessError):
+    """The exception raised by default when a child exits with a non-zero exit
+    status. See the :func:`unchecked` method for suppressing this.
+    """
     def __init__(self, output, expression_str):
         self.output = output
         self._expression_str = expression_str
