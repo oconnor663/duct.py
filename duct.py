@@ -81,13 +81,23 @@ NAMES = {
 
 
 def cmd(prog, *args):
-    """The entry point to duct.
+    """Build a command :class:`Expression` from a program name and any number
+    of arguments.
+
+    This is the entry point to Duct. Everything else is methods on the
+    :class:`Expression` returned by :func:`cmd`.
     """
     return Expression(CMD, None, (prog, args))
 
 
 class Expression:
-    """An expression.
+    """An expression object representing a command or a pipeline of commands.
+
+    Build command expressions with the :func:`cmd` function. Build pipelines
+    with the :func:`pipe` method. Methods like :func:`stdout_path` and
+    :func:`env` also return new expressions representing the modified execution
+    environment. Execute expressions with :func:`run`, :func:`read`,
+    :func:`start`, or :func:`reader`.
     """
     def __init__(self, _type, inner, payload=None):
         self._type = _type
@@ -98,23 +108,29 @@ class Expression:
         return repr_expression(self)
 
     def run(self):
-        '''Execute the expression and return an Output object, which includes
+        """Execute the expression and return an :class:`Output`, which includes
         the exit status and any captured output. Raise an exception if the
-        status is non-zero.'''
+        status is non-zero.
+        """
         return self.start().wait()
 
     def read(self):
-        '''Execute the expression and capture its output, similar to backticks
-        or $() in the shell. This is a wrapper around reader() which reads to
-        EOF, decodes UTF-8, trims newlines, and returns the resulting
-        string.'''
+        """Execute the expression and capture its output, similar to backticks
+        or $() in the shell.
+
+        This is a wrapper around reader() which reads to EOF, decodes UTF-8,
+        trims newlines, and returns the resulting string.
+        """
         stdout_bytes = self.reader().read()
         stdout_str = decode_with_universal_newlines(stdout_bytes)
         return stdout_str.rstrip('\n')
 
     def start(self):
-        '''Start executing the expression and return a Handle object.
-        Calling `.start().wait()` is equivalent to `.run()`.'''
+        """Start executing the expression and return a :class:`Handle`.
+
+        Calling :func:`start` followed by :func:`wait` is equivalent to
+        :func:`run`.
+        """
         with new_iocontext() as context:
             handle = start_expression(self, context)
             context.stdout_capture_context.start_thread_if_needed()
@@ -122,14 +138,18 @@ class Expression:
             return handle
 
     def reader(self):
-        '''Start executing the expression with its stdout captured, and return
+        """Start executing the expression with its stdout captured, and return
         a ReaderHandle object wrapping the capture pipe. This object inherits
-        from io.BufferedIOBase, and you can call `read` and related methods on
-        it. Once the reader reaches EOF, it automatically closes the pipe and
-        calls `wait` on the underlying child process(es). Note that while
-        `start` uses background threads to do IO, the ReaderHandle doesn't read
-        from the capture pipe until `read` is called. If the caller doesn't
-        read promptly, this may cause child processes to block.'''
+        from :class:`io.BufferedIOBase`, and you can call :func:`read` and
+        related methods on it. Once the reader reaches EOF, it automatically
+        closes the pipe and calls :func:`wait` on the underlying child
+        process(es).
+
+        Note that while :func:`start` uses background threads to do IO, the
+        :class:`ReaderHandle` doesn't read from the capture pipe until
+        :func:`read` is called. If the caller doesn't read promptly, this may
+        cause child processes to block.
+        """
         with new_iocontext() as context:
             handle = start_expression(self.stdout_capture(), context)
             read_pipe = context.stdout_capture_context.get_read_pipe()
@@ -137,13 +157,17 @@ class Expression:
             return ReaderHandle(handle, read_pipe)
 
     def pipe(self, right_side):
+        r"""Combine two expressions to form a pipeline.
+        """
         return Expression(PIPE, None, (self, right_side))
 
     def stdin_bytes(self, buf):
         r"""Redirect the standard input of the expression to a pipe, and write
-        the supplied bytes to the pipe using a background thread. This also
-        accepts a string, in which case it converts any "\n" characters to
-        os.linesep and encodes the result as UTF-8."""
+        the supplied bytes to the pipe using a background thread.
+
+        This also accepts a string, in which case it converts any "\n"
+        characters to os.linesep and encodes the result as UTF-8.
+        """
         return Expression(STDIN_BYTES, self, buf)
 
     def stdin_path(self, path):
@@ -926,14 +950,17 @@ class SharedChild:
 
 class ReaderHandle(io.BufferedIOBase):
     """A stdout reader that automatically closes its read pipe and awaits its
-    child processes once EOF is reached. Note that if the caller leaks this
-    object, the child processes will become zombies, and the read pipe will not
-    be closed promptly. To guard against this, use a try-finally block with
-    `kill_and_wait` in the finally clause, which will also close the read pipe.
-    Note that this object is not a context manager, because killing child
-    processes implicitly on context exit would be too surprising. Likewise this
-    object doesn't implement close, because it would be ambiguous whether the
-    child processe were still running."""
+    child processes once EOF is reached.
+
+    Note that if the caller leaks this object, the child processes will become
+    zombies, and the read pipe will not be closed promptly. To guard against
+    this, use a try-finally block with :func:`kill_and_wait` in the finally
+    clause, which will also close the read pipe. Note that this object is not a
+    context manager, because killing child processes implicitly on context exit
+    would be too surprising. Likewise this object doesn't implement close,
+    because it would be ambiguous whether the child processe were still
+    running.
+    """
     def __init__(self, handle, read_pipe):
         self._handle = handle
         self._read_pipe = read_pipe
