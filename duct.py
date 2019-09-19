@@ -119,6 +119,9 @@ def cmd(prog, *args):
 
     This is the sole entry point to Duct. All the types below are built with
     methods on the :class:`Expression` returned by this function.
+
+    >>> cmd("echo", "hi").read()
+    'hi'
     """
     return Expression(CMD, None, (prog, args))
 
@@ -144,6 +147,9 @@ class Expression:
         """Execute the expression and return an :class:`Output`, which includes
         the exit status and any captured output. Raise an exception if the
         status is non-zero.
+
+        >>> cmd("true").run()
+        Output(status=0, stdout=None, stderr=None)
         """
         return self.start().wait()
 
@@ -153,16 +159,24 @@ class Expression:
 
         This is a wrapper around reader() which reads to EOF, decodes UTF-8,
         trims newlines, and returns the resulting string.
+
+        >>> cmd("echo", "hi").read()
+        'hi'
         """
         stdout_bytes = self.reader().read()
         stdout_str = decode_with_universal_newlines(stdout_bytes)
         return stdout_str.rstrip('\n')
 
     def start(self):
-        """Start executing the expression and return a :class:`Handle`.
+        r"""Start executing the expression and return a :class:`Handle`.
 
         Calling :func:`start` followed by :func:`wait` is equivalent to
         :func:`run`.
+
+        >>> handle = cmd("echo", "hi").stdout_capture().start()
+        >>> # Do some other stuff.
+        >>> handle.wait()
+        Output(status=0, stdout=b'hi\n', stderr=None)
         """
         with new_iocontext() as context:
             handle = start_expression(self, context)
@@ -171,7 +185,7 @@ class Expression:
             return handle
 
     def reader(self):
-        """Start executing the expression with its stdout captured, and return
+        r"""Start executing the expression with its stdout captured, and return
         a :class:`ReaderHandle` wrapping the capture pipe.
 
         Note that while :func:`start` uses background threads to do IO,
@@ -179,6 +193,11 @@ class Expression:
         the child's output promptly. Otherwise the child's stdout pipe buffer
         can fill up, causing the child to block and potentially leading to
         performance issues or deadlocks.
+
+        >>> reader = cmd("echo", "hi").reader()
+        >>> with reader:
+        ...     reader.read()
+        b'hi\n'
         """
         with new_iocontext() as context:
             handle = start_expression(self.stdout_capture(), context)
@@ -188,6 +207,9 @@ class Expression:
 
     def pipe(self, right_side):
         r"""Combine two expressions to form a pipeline.
+
+        >>> cmd("echo", "hi").pipe(cmd("sed", "s/i/o/")).read()
+        'ho'
         """
         return Expression(PIPE, None, (self, right_side))
 
@@ -197,6 +219,9 @@ class Expression:
 
         This also accepts a string, in which case it converts any "\n"
         characters to os.linesep and encodes the result as UTF-8.
+
+        >>> cmd("cat").stdin_bytes(b"foo").read()
+        'foo'
         """
         return Expression(STDIN_BYTES, self, buf)
 
