@@ -627,9 +627,18 @@ def test_reader_positive_size():
     assert reader._read_pipe is None, "has been awaited"
 
 
-def test_reader_kill():
-    reader = sleep_cmd(1000000).unchecked().reader()
+def test_reader_close():
+    reader = sleep_cmd(1000000).reader()
+    reader.close()
+    assert reader._read_pipe is None
+    with raises(StatusError):
+        reader.read()
+
+
+def test_reader_with():
+    reader = sleep_cmd(1000000).reader()
     with reader:
         pass
     assert reader._read_pipe is None
-    assert reader.read() == b""
+    with raises(StatusError):
+        reader.read()
