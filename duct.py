@@ -273,7 +273,7 @@ def start_pipe(context, left_expr, right_expr):
             kill(left_handle)
             # This wait helper function doesn't throw on non-zero statuses or
             # join capture threads.
-            wait(left_handle, True)
+            wait_on_status(left_handle, True)
             raise
 
     return (left_handle, right_handle)
@@ -417,33 +417,34 @@ class WaitHandle:
         self._stderr_capture_context = stderr_capture_context
 
     def wait(self):
-        status = wait(self, True)
-        return self._finish_output(status)
-
-    def try_wait(self):
-        status = wait(self, False)
-        if status is not None:
-            return self._finish_output(status)
-        return None
-
-    def _finish_output(self, status):
-        assert status is not None
-        stdout = self._stdout_capture_context.join_thread_if_needed()
-        stderr = self._stderr_capture_context.join_thread_if_needed()
-        output = Output(status.code, stdout, stderr)
+        status, output = wait_on_status_and_output(self)
         if is_checked_error(status):
             raise StatusError(output, self._expression_str)
         return output
 
+    def try_wait(self):
+        status = wait_on_status(self, False)
+        if status is None:
+            return None
+        else:
+            return self.wait()
+
     def kill_and_wait(self):
         kill(self)
-        try:
-            return self.wait()
-        except StatusError as e:
-            return e.output
+        wait_on_status_and_output(self)
 
 
-def wait(handle, blocking):
+# This function handle waiting and collecting output, but does not raise status
+# errors for non-zero exit statuses.
+def wait_on_status_and_output(handle):
+    status = wait_on_status(handle, True)
+    stdout = handle._stdout_capture_context.join_thread_if_needed()
+    stderr = handle._stderr_capture_context.join_thread_if_needed()
+    output = Output(status.code, stdout, stderr)
+    return (status, output)
+
+
+def wait_on_status(handle, blocking):
     if handle._type == CMD:
         shared_child = handle._payload
         return wait_child(shared_child, blocking)
@@ -451,7 +452,7 @@ def wait(handle, blocking):
         left, right = handle._payload
         return wait_pipe(left, right, blocking)
 
-    status = wait(handle._inner, blocking)
+    status = wait_on_status(handle._inner, blocking)
     if blocking:
         assert status is not None
 
@@ -479,8 +480,8 @@ def wait_child(shared_child, blocking):
 
 
 def wait_pipe(left, right, blocking):
-    left_status = wait(left, blocking)
-    right_status = wait(right, blocking)
+    left_status = wait_on_status(left, blocking)
+    right_status = wait_on_status(right, blocking)
     if not blocking and (left_status is None or right_status is None):
         return None
     assert left_status is not None and right_status is not None
@@ -949,4 +950,4 @@ class ReaderHandle(io.BufferedIOBase):
 
     def kill_and_wait(self):
         self._close_pipe()
-        return self._handle.kill_and_wait()
+        self._handle.kill_and_wait()

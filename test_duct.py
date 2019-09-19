@@ -533,11 +533,11 @@ def test_wait_and_kill():
     handle = sleep_cmd(1000000).pipe(cat_cmd()).env("A", "B").start()
     assert handle.try_wait() is None
     assert handle.try_wait() is None
-    output = handle.kill_and_wait()
-    assert output.status != 0
-    # Again to cover the already-waited branches.
-    output = handle.kill_and_wait()
-    assert output.status != 0
+    handle.kill_and_wait()
+    # Twice to exercise the already-waited branches.
+    handle.kill_and_wait()
+    with raises(StatusError):
+        handle.wait()
 
 
 def test_right_side_fails_to_start():
@@ -629,9 +629,6 @@ def test_reader_positive_size():
 
 def test_reader_kill():
     reader = sleep_cmd(1000000).reader()
-    output = reader.kill_and_wait()
-    assert output.status != 0
-    assert output.stdout is None
-    assert output.stderr is None
+    reader.kill_and_wait()
     assert reader._read_pipe is None
     assert reader.read() == b""
