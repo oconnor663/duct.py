@@ -11,5 +11,6 @@ install:
   - pip install pytest pytest-cov coveralls
 script:
   - py.test test_duct.py --cov=duct --cov-config=.coveragerc
+  - python3 -m doctest duct.py -v
 after_success:
   - coveralls
