@@ -139,16 +139,13 @@ class Expression:
 
     def reader(self):
         """Start executing the expression with its stdout captured, and return
-        a ReaderHandle object wrapping the capture pipe. This object inherits
-        from :class:`io.BufferedIOBase`, and you can call :func:`read` and
-        related methods on it. Once the reader reaches EOF, it automatically
-        closes the pipe and calls :func:`wait` on the underlying child
-        process(es).
+        a :class:`ReaderHandle` wrapping the capture pipe.
 
-        Note that while :func:`start` uses background threads to do IO, the
-        :class:`ReaderHandle` doesn't read from the capture pipe until
-        :func:`read` is called. If the caller doesn't read promptly, this may
-        cause child processes to block.
+        Note that while :func:`start` uses background threads to do IO,
+        :func:`reader` does not, and it's the caller's responsibility to read
+        the child's output promptly. Otherwise the child's stdout pipe buffer
+        can fill up, causing the child to block and potentially leading to
+        performance issues or deadlocks.
         """
         with new_iocontext() as context:
             handle = start_expression(self.stdout_capture(), context)
@@ -949,17 +946,16 @@ class SharedChild:
 
 
 class ReaderHandle(io.BufferedIOBase):
-    """A stdout reader that automatically closes its read pipe and awaits its
-    child processes once EOF is reached.
+    """A stdout reader that automatically closes its read pipe and awaits child
+    processes once EOF is reached.
 
-    Note that if the caller leaks this object, the child processes will become
-    zombies, and the read pipe will not be closed promptly. To guard against
-    this, use a try-finally block with :func:`kill_and_wait` in the finally
-    clause, which will also close the read pipe. Note that this object is not a
-    context manager, because killing child processes implicitly on context exit
-    would be too surprising. Likewise this object doesn't implement close,
-    because it would be ambiguous whether the child processe were still
-    running.
+    This inherits from :class:`io.BufferedIOBase`, and you can call
+    :func:`read` and related methods on it. If the child exits with a non-zero
+    status, and :func:`unchecked` was not used, the final :func:`read` will
+    raise a :class:`StatusError`.
+
+    When a :class:`ReaderHandle` is used as a context manager, context exit
+    will automatically call :func:`close`.
     """
     def __init__(self, handle, read_pipe):
         self._handle = handle
@@ -967,21 +963,23 @@ class ReaderHandle(io.BufferedIOBase):
 
     def read(self, size=-1):
         if self._read_pipe is None:
+            self._handle.wait()  # May raise a StatusError.
             return b""
         is_zero_size = size == 0
         is_positive_size = type(size) is int and size > 0
         is_read_to_end = not is_zero_size and not is_positive_size
         ret = self._read_pipe.read(size)
         if is_read_to_end or (is_positive_size and ret == b""):
-            self._close_pipe()
-            self._handle.wait()
-        return ret
-
-    def _close_pipe(self):
-        if self._read_pipe is not None:
             self._read_pipe.close()
             self._read_pipe = None
+            self._handle.wait()  # May raise a StatusError.
+        return ret
 
-    def kill_and_wait(self):
-        self._close_pipe()
-        self._handle.kill_and_wait()
+    def close(self):
+        """Close the read pipe and, if EOF has not already been read, call
+        :func:`kill_and_wait` on the inner :class:`Handle`.
+        """
+        if self._read_pipe is not None:
+            self._handle.kill_and_wait()  # Does not raise StatusError.
+            self._read_pipe.close()
+            self._read_pipe = None

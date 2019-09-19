@@ -628,7 +628,8 @@ def test_reader_positive_size():
 
 
 def test_reader_kill():
-    reader = sleep_cmd(1000000).reader()
-    reader.kill_and_wait()
+    reader = sleep_cmd(1000000).unchecked().reader()
+    with reader:
+        pass
     assert reader._read_pipe is None
     assert reader.read() == b""
