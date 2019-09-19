@@ -15,6 +15,13 @@ optimizes for the typical case. See for example the [partially started
 pipelines](#partially-started-pipelines) and [using background threads for
 IO](#using-background-threads-for-io) sections.
 
+## Non-zero exit statuses are errors by default.
+
+All methods of waiting on a child process should return errors or throw
+exceptions by default when the child exits with a non-zero status. That
+includes the stdout reader, once it reaches EOF. The only two exceptions to
+this are the `unchecked` method and the combined `kill_and_wait` operation.
+
 ## SIGPIPE
 
 Implementations need to catch broken pipe errors in input writer threads, so

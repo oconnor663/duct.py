@@ -1,9 +1,15 @@
 Duct
-================================
+====
 
-.. module:: duct
+.. automodule:: duct
+
+Functions
+---------
 
 .. autofunction:: cmd
+
+Types
+-----
 
 .. autoclass:: Expression()
    :members:

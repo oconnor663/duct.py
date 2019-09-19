@@ -1,3 +1,41 @@
+r"""\
+Duct is a library for running child processes. It helps you make pipelines and
+redirect output in other ways. Duct also takes care of a variety of `gotchas,
+bugs, and Unix/Windows compatibility issues
+<https://github.com/oconnor663/duct.py/blob/master/spec.md>`_.
+
+Run a command that writes to the terminal as usual:
+
+>>> from duct import cmd
+>>> cmd("true").run()
+Output(status=0, stdout=None, stderr=None)
+
+Capture the output of a command:
+
+>>> cmd("echo", "hi").read()
+'hi'
+
+Capture the output of a pipeline:
+
+>>> cmd("echo", "hi").pipe(cmd("sed", "s/i/o/")).read()
+'ho'
+
+Merge stderr into stdout and read both incrementally:
+
+>>> reader = cmd("bash", "-c", "echo out && echo err 1>&2").stderr_to_stdout().reader()
+>>> reader.readlines()
+[b'out\n', b'err\n']
+
+Children that exit with a non-zero status raise an exception by default:
+
+>>> cmd("false").run()
+Traceback (most recent call last):
+...
+duct.StatusError: Expression cmd('false') returned non-zero exit status: Output(status=1, stdout=None, stderr=None)
+>>> cmd("false").unchecked().run()
+Output(status=1, stdout=None, stderr=None)
+"""  # noqa: E501
+
 from collections import namedtuple
 from contextlib import contextmanager
 import io
@@ -79,8 +117,8 @@ def cmd(prog, *args):
     """Build a command :class:`Expression` from a program name and any number
     of arguments.
 
-    This is the entry point to Duct. Everything else is methods on the
-    :class:`Expression` returned by :func:`cmd`.
+    This is the sole entry point to Duct. All the types below are built with
+    methods on the :class:`Expression` returned by this function.
     """
     return Expression(CMD, None, (prog, args))
 
