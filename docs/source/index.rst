@@ -1,0 +1,5 @@
+Duct
+================================
+
+.. automodule:: duct
+   :members:

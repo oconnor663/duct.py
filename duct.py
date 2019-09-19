@@ -20,8 +20,6 @@ try:
 except NameError:
     PIPE_CLOSED_ERROR = IOError
 
-__all__ = ["cmd"]
-
 HAS_WAITID = "waitid" in dir(os)
 
 # Expression and handle types.
@@ -83,10 +81,14 @@ NAMES = {
 
 
 def cmd(prog, *args):
+    """The entry point to duct.
+    """
     return Expression(CMD, None, (prog, args))
 
 
 class Expression:
+    """An expression.
+    """
     def __init__(self, _type, inner, payload=None):
         self._type = _type
         self._inner = inner
@@ -94,6 +96,21 @@ class Expression:
 
     def __repr__(self):
         return repr_expression(self)
+
+    def run(self):
+        '''Execute the expression and return an Output object, which includes
+        the exit status and any captured output. Raise an exception if the
+        status is non-zero.'''
+        return self.start().wait()
+
+    def read(self):
+        '''Execute the expression and capture its output, similar to backticks
+        or $() in the shell. This is a wrapper around reader() which reads to
+        EOF, decodes UTF-8, trims newlines, and returns the resulting
+        string.'''
+        stdout_bytes = self.reader().read()
+        stdout_str = decode_with_universal_newlines(stdout_bytes)
+        return stdout_str.rstrip('\n')
 
     def start(self):
         '''Start executing the expression and return a Handle object.
@@ -118,21 +135,6 @@ class Expression:
             read_pipe = context.stdout_capture_context.get_read_pipe()
             context.stderr_capture_context.start_thread_if_needed()
             return ReaderHandle(handle, read_pipe)
-
-    def run(self):
-        '''Execute the expression and return an Output object, which includes
-        the exit status and any captured output. Raise an exception if the
-        status is non-zero.'''
-        return self.start().wait()
-
-    def read(self):
-        '''Execute the expression and capture its output, similar to backticks
-        or $() in the shell. This is a wrapper around reader() which reads to
-        EOF, decodes UTF-8, trims newlines, and returns the resulting
-        string.'''
-        stdout_bytes = self.reader().read()
-        stdout_str = decode_with_universal_newlines(stdout_bytes)
-        return stdout_str.rstrip('\n')
 
     def pipe(self, right_side):
         return Expression(PIPE, None, (self, right_side))
@@ -407,6 +409,8 @@ class StatusError(subprocess.CalledProcessError):
 
 
 class Handle:
+    """A handle.
+    """
     def __init__(self, _type, inner, payload, expression_str,
                  stdout_capture_context, stderr_capture_context):
         self._type = _type
