@@ -688,23 +688,23 @@ def stringify_if_path(x):
     return x
 
 
+# Pathlib never renders a leading './' in front of a local path. That's an
+# issue because on POSIX subprocess.py (like bash) won't execute scripts in the
+# current directory without it. In the same vein, we also don't want
+# Path('echo') to match '/usr/bin/echo' from the $PATH. To work around both
+# issues, we explicitly join a leading dot to any relative pathlib path.
 def stringify_with_dot_if_path(x):
-    '''Pathlib never renders a leading './' in front of a local path. That's an
-    issue because on POSIX subprocess.py (like bash) won't execute scripts in
-    the current directory without it. In the same vein, we also don't want
-    Path('echo') to match '/usr/bin/echo' from the $PATH. To work around both
-    issues, we explicitly join a leading dot to any relative pathlib path.'''
     if isinstance(x, PurePath):
         # Note that join does nothing if the path is absolute.
         return os.path.join('.', str(x))
     return x
 
 
+# The standard Thread class doesn't give us any way to access the return value
+# of the target function, or to see any exceptions that might've gotten thrown.
+# This is a thin wrapper around Thread that enhances the join function to
+# return values and reraise exceptions.
 class ThreadWithReturn(threading.Thread):
-    '''The standard Thread class doesn't give us any way to access the return
-    value of the target function, or to see any exceptions that might've gotten
-    thrown. This is a thin wrapper around Thread that enhances the join
-    function to return values and reraise exceptions.'''
     def __init__(self, target, args=(), kwargs=None, **thread_kwargs):
         threading.Thread.__init__(self, **thread_kwargs)
         self._target = target
@@ -732,33 +732,32 @@ def open_pipe():
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
 
 
+# There's a tricky interaction between exe paths and `dir`. Exe paths can be
+# relative, and so we have to ask: Is an exe path interpreted relative to the
+# parent's cwd, or the child's? The answer is that it's platform dependent! >.<
+# (Windows uses the parent's cwd, but because of the fork-chdir-exec pattern,
+# Unix usually uses the child's.)
+#
+# We want to use the parent's cwd consistently, because that saves the caller
+# from having to worry about whether `dir` will have side effects, and because
+# it's easy for the caller to use path.join if they want to. That means that
+# when `dir` is in use, we need to detect exe names that are relative paths,
+# and absolutify them. We want to do that as little as possible though, both
+# because canonicalization can fail, and because we prefer to let the caller
+# control the child's argv[0].
+#
+# We never want to absolutify a name like "emacs", because that's probably a
+# program in the PATH rather than a local file. So we look for slashes in the
+# name to determine what's a filepath and what isn't. Note that anything given
+# as a Path will always have a slash by the time we get here, because
+# stringify_with_dot_if_path prepends a ./ to them when they're relative. This
+# leaves the case where Windows users might pass a local file like "foo.bat" as
+# a string, which we can't distinguish from a global program name. However,
+# because the Windows has the preferred "relative to parent's cwd" behavior
+# already, this case actually works without our help. (The thing Windows users
+# have to watch out for instead is local files shadowing global program names,
+# which I don't think we can or should prevent.)
 def maybe_canonicalize_exe_path(exe_name, iocontext):
-    '''There's a tricky interaction between exe paths and `dir`. Exe paths can
-    be relative, and so we have to ask: Is an exe path interpreted relative to
-    the parent's cwd, or the child's? The answer is that it's platform
-    dependent! >.< (Windows uses the parent's cwd, but because of the
-    fork-chdir-exec pattern, Unix usually uses the child's.)
-
-    We want to use the parent's cwd consistently, because that saves the caller
-    from having to worry about whether `dir` will have side effects, and
-    because it's easy for the caller to use path.join if they want to. That
-    means that when `dir` is in use, we need to detect exe names that are
-    relative paths, and absolutify them. We want to do that as little as
-    possible though, both because canonicalization can fail, and because we
-    prefer to let the caller control the child's argv[0].
-
-    We never want to absolutify a name like "emacs", because that's probably a
-    program in the PATH rather than a local file. So we look for slashes in the
-    name to determine what's a filepath and what isn't. Note that anything
-    given as a Path will always have a slash by the time we get here, because
-    stringify_with_dot_if_path prepends a ./ to them when they're relative.
-    This leaves the case where Windows users might pass a local file like
-    "foo.bat" as a string, which we can't distinguish from a global program
-    name. However, because the Windows has the preferred "relative to parent's
-    cwd" behavior already, this case actually works without our help. (The
-    thing Windows users have to watch out for instead is local files shadowing
-    global program names, which I don't think we can or should prevent.)'''
-
     has_sep = (os.path.sep in exe_name
                or (os.path.altsep is not None and os.path.altsep in exe_name))
 
@@ -770,37 +769,36 @@ def maybe_canonicalize_exe_path(exe_name, iocontext):
 
 popen_lock = threading.Lock()
 
+# This wrapper works around two major deadlock issues to do with pipes. The
+# first is that, before Python 3.2 on POSIX systems, os.pipe() creates
+# inheritable file descriptors, which leak to all child processes and prevent
+# reads from reaching EOF. The workaround for this is to set close_fds=True on
+# POSIX, which was not the default in those versions. See PEP 0446 for many
+# details.
 
+# The second issue arises on Windows, where we're not allowed to set
+# close_fds=True while also setting stdin/stdout/stderr. Descriptors from
+# os.pipe() on Windows have never been inheritable, so it would seem that we're
+# safe. However, the Windows implementation of subprocess.Popen() creates
+# temporary inheritable copies of its descriptors, and these can leak. The
+# workaround for this is to protect Popen() with a global lock. See
+# https://bugs.python.org/issue25565.
+
+
+# This function also returns a SharedChild object, which wraps
+# subprocess.Popen. That type works around another race condition to do with
+# signaling children.
 def safe_popen(*args, **kwargs):
-    '''This wrapper works around two major deadlock issues to do with pipes.
-    The first is that, before Python 3.2 on POSIX systems, os.pipe() creates
-    inheritable file descriptors, which leak to all child processes and prevent
-    reads from reaching EOF. The workaround for this is to set close_fds=True
-    on POSIX, which was not the default in those versions. See PEP 0446 for
-    many details.
-
-    The second issue arises on Windows, where we're not allowed to set
-    close_fds=True while also setting stdin/stdout/stderr. Descriptors from
-    os.pipe() on Windows have never been inheritable, so it would seem that
-    we're safe. However, the Windows implementation of subprocess.Popen()
-    creates temporary inheritable copies of its descriptors, and these can
-    leak. The workaround for this is to protect Popen() with a global lock. See
-    https://bugs.python.org/issue25565.
-
-    This function also returns a SharedChild object, which wraps
-    subprocess.Popen. That type works around another race condition to do with
-    signaling children.'''
-
     close_fds = (os.name != 'nt')
     with popen_lock:
         return SharedChild(*args, close_fds=close_fds, **kwargs)
 
 
+# We could let our pipes do this for us, by opening them in universal newlines
+# mode, but it's a bit cleaner to do it ourselves. That saves us from passing
+# around the mode all over the place, and from having decoding exceptions
+# thrown on reader threads.
 def decode_with_universal_newlines(b):
-    '''We could let our pipes do this for us, by opening them in universal
-    newlines mode, but it's a bit cleaner to do it ourselves. That saves us
-    from passing around the mode all over the place, and from having decoding
-    exceptions thrown on reader threads.'''
     return b.decode('utf8').replace('\r\n', '\n').replace('\r', '\n')
 
 
@@ -808,43 +806,42 @@ def encode_with_universal_newlines(s):
     return s.replace('\n', os.linesep).encode('utf8')
 
 
+# Environment variables are case-insensitive on Windows. To deal with that,
+# Python on Windows converts all the keys in os.environ to uppercase
+# internally. That's mostly transparent when we deal with os.environ directly,
+# but when we call os.environ.copy(), we get a regular dictionary with all the
+# keys uppercased. We need to do a similar conversion, or else additions and
+# removals in that copy won't interact properly with the inherited parent
+# environment.
 def convert_env_var_name(var):
-    '''Environment variables are case-insensitive on Windows. To deal with
-    that, Python on Windows converts all the keys in os.environ to uppercase
-    internally. That's mostly transparent when we deal with os.environ
-    directly, but when we call os.environ.copy(), we get a regular dictionary
-    with all the keys uppercased. We need to do a similar conversion, or else
-    additions and removals in that copy won't interact properly with the
-    inherited parent environment.'''
-
     if os.name == 'nt':
         return var.upper()
     return var
 
 
+# The wait() and kill() methods on the standard library Popen class have a race
+# condition on Unix. Normally kill() checks to see whether a process has
+# already been awaited before sending a signal, so that if the PID has been
+# reused by an unrelated process in the meantime it won't accidentally signal
+# that unrelated process. However, if kill() and wait() are called from
+# different threads, it's possible for wait() to free the PID *after* kill()
+# has seen that the child is still running. If the kill() thread pauses at
+# exactly that moment, long enough for the OS to reuse the PID, kill() could
+# kill the wrong process. This is unlikely under ordinary circumstances, but
+# more likely if the system is under heavy load and the PID space is almost
+# exhausted.
+#
+# The workaround for this race condition on Unix is to use:
+#
+#     os.waitid(os.P_PID, child_pid, os.WEXITED | os.WNOWAIT)
+#
+# That call waits on the child to exit, but *doesn't* free its PID for reuse.
+# Then we set an internal flag that's synchronized with kill(), before finally
+# calling wait() to reap the child.
+#
+# Note that Windows doesn't have this problem, because child handles (unlike
+# raw PIDs) have to be explicitly closed.
 class SharedChild:
-    """The wait() and kill() methods on the standard library Popen class have a
-    race condition on Unix. Normally kill() checks to see whether a process has
-    already been awaited before sending a signal, so that if the PID has been
-    reused by an unrelated process in the meantime it won't accidentally signal
-    that unrelated process. However, if kill() and wait() are called from
-    different threads, it's possible for wait() to free the PID *after* kill()
-    has seen that the child is still running. If the kill() thread pauses at
-    exactly that moment, long enough for the OS to reuse the PID, kill() could
-    kill the wrong process. This is unlikely under ordinary circumstances, but
-    more likely if the system is under heavy load and the PID space is almost
-    exhausted.
-
-    The workaround for this race condition on Unix is to use:
-
-        os.waitid(os.P_PID, child_pid, os.WEXITED | os.WNOWAIT)
-
-    That call waits on the child to exit, but *doesn't* free its PID for reuse.
-    Then we set an internal flag that's synchronized with kill(), before
-    finally calling wait() to reap the child.
-
-    Note that Windows doesn't have this problem, because child handles (unlike
-    raw PIDs) have to be explicitly closed."""
     def __init__(self, *args, **kwargs):
         self._child = subprocess.Popen(*args, **kwargs)
         self._status = None
