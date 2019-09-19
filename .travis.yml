@@ -12,6 +12,6 @@ install:
 script:
   - py.test test_duct.py --cov=duct --cov-config=.coveragerc
   # Doctests will fail on python2, so run them on python3 explicitly.
-  - python3 -m doctest duct.py -v
+  - python3 -m doctest duct.py
 after_success:
   - coveralls
