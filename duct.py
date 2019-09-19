@@ -96,7 +96,7 @@ class Expression:
         return repr_expression(self)
 
     def start(self):
-        '''Start executing the expression and return a WaitHandle object.
+        '''Start executing the expression and return a Handle object.
         Calling `.start().wait()` is equivalent to `.run()`.'''
         with new_iocontext() as context:
             handle = start_expression(self, context)
@@ -231,9 +231,9 @@ def start_expression(expression, context):
             handle_inner = start_expression(expression._inner,
                                             modified_context)
 
-    return WaitHandle(expression._type, handle_inner, handle_payload_cell[0],
-                      str(expression), context.stdout_capture_context,
-                      context.stderr_capture_context)
+    return Handle(expression._type, handle_inner, handle_payload_cell[0],
+                  str(expression), context.stdout_capture_context,
+                  context.stderr_capture_context)
 
 
 def start_cmd(context, prog, args):
@@ -406,7 +406,7 @@ class StatusError(subprocess.CalledProcessError):
             self._expression_str, self.output)
 
 
-class WaitHandle:
+class Handle:
     def __init__(self, _type, inner, payload, expression_str,
                  stdout_capture_context, stderr_capture_context):
         self._type = _type
