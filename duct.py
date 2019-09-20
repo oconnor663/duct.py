@@ -743,7 +743,8 @@ class Handle:
         r"""Send a kill signal to the child process(es). This is equivalent to
         :func:`Popen.kill`, which uses ``SIGKILL`` on Unix. After sending the
         signal, wait for the child to finish and free the OS resources
-        associated with it.
+        associated with it. If the child has already been waited on, this has
+        no effect.
 
         This function does not return an :class:`Output`, and it does not raise
         :class:`StatusError`. However, subsequent calls to :func:`wait` or
@@ -1223,25 +1224,45 @@ class SharedChild:
                 self._child.kill()
 
 
-class ReaderHandle(io.BufferedIOBase):
+class ReaderHandle(io.IOBase):
     r"""A stdout reader that automatically closes its read pipe and awaits
     child processes once EOF is reached.
 
-    This inherits from :class:`io.BufferedIOBase`, and you can call
-    :func:`read` and related methods on it (:func:`readline`,
-    :func:`readlines`). When :class:`ReaderHandle` is used as a context manager
-    with the ``with`` keyword, context exit will automatically call
-    :func:`close`.
+    This inherits from :class:`io.IOBase`, and you can call :func:`read` and
+    related methods like :func:`readlines` on it. When :class:`ReaderHandle` is
+    used as a context manager with the ``with`` keyword, context exit will
+    automatically call :func:`close`.
 
-    If the child exits with a non-zero status, and :func:`unchecked` was not
-    used, the :func:`read` call that would have returned EOF (that is, ``b""``)
-    will instead raise a :class:`StatusError`.
+    Note that if you don't read to EOF, and you don't call :func:`close` or use
+    a ``with`` statement, then the child will become a zombie. Using a ``with``
+    statement is recommended for exception safety.
     """
     def __init__(self, handle, read_pipe):
         self._handle = handle
         self._read_pipe = read_pipe
 
     def read(self, size=-1):
+        r"""Read bytes from the child's standard output. Because
+        :class:`ReaderHandle` inherits from :class:`io.IOBase`, related methods
+        like :func:`readlines` are also available.
+
+        >>> reader = cmd("printf", r"a\nb\nc\n").reader()
+        >>> with reader:
+        ...     reader.read(2)
+        ...     reader.readlines()
+        b'a\n'
+        [b'b\n', b'c\n']
+
+        If :func:`read` reaches EOF and awaits the child, and the child exits
+        with a non-zero status, and :func:`Expression.unchecked` was not used,
+        :func:`read` will raise a :class:`StatusError`.
+
+        >>> with cmd("false").reader() as reader:
+        ...     reader.read()
+        Traceback (most recent call last):
+        ...
+        duct.StatusError: Expression cmd('false').stdout_capture() returned non-zero exit status: Output(status=1, stdout=None, stderr=None)
+        """  # noqa: E501
         if self._read_pipe is None:
             self._handle.wait()  # May raise a StatusError.
             return b""
@@ -1256,8 +1277,15 @@ class ReaderHandle(io.BufferedIOBase):
         return ret
 
     def close(self):
-        r"""Close the read pipe and, if EOF has not already been read, call
-        :func:`kill_and_wait` on the inner :class:`Handle`.
+        r"""Close the read pipe and call :func:`kill_and_wait` on the inner
+        :class:`Handle`.
+
+        :class:`ReaderHandle` is a context manager, and if you use it with the
+        `with` keyword, context exit will automatically call :func:`close`.
+        Using a ``with`` statement is recommended, for exception safety.
+
+        >>> reader = cmd("echo", "hi").reader()
+        >>> reader.close()
         """
         if self._read_pipe is not None:
             self._handle.kill_and_wait()  # Does not raise StatusError.
