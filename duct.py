@@ -170,13 +170,17 @@ class Expression:
     def start(self):
         r"""Start executing the expression and return a :class:`Handle`.
 
-        Calling :func:`start` followed by :func:`wait` is equivalent to
+        Calling :func:`start` followed by :func:`Handle.wait` is equivalent to
         :func:`run`.
 
         >>> handle = cmd("echo", "hi").stdout_capture().start()
         >>> # Do some other stuff.
         >>> handle.wait()
         Output(status=0, stdout=b'hi\n', stderr=None)
+
+        Note that leaking a :class:`Handle` without calling :func:`Handle.wait`
+        will turn the children into zombie processes. In a long-running
+        program, that could be serious resource leak.
         """
         with new_iocontext() as context:
             handle = start_expression(self, context)
@@ -210,6 +214,17 @@ class Expression:
 
         >>> cmd("echo", "hi").pipe(cmd("sed", "s/i/o/")).read()
         'ho'
+
+        During execution, if one side of the pipe returns a non-zero exit
+        status, that becomes the status of the whole pipe, similar to Bash's
+        ``pipefail`` option. If both sides return non-zero, and one of them is
+        :func:`unchecked`, then the checked side wins. Otherwise the right side
+        wins.
+
+        During spawning, if the left side of the pipe spawns successfully, but
+        the right side fails to spawn, the left side will be killed and
+        awaited. That's necessary to return the spawn errors immediately,
+        without leaking the left side as a zombie.
         """
         return Expression(PIPE, None, (self, right_side))
 
@@ -217,8 +232,8 @@ class Expression:
         r"""Redirect the standard input of the expression to a pipe, and write
         the supplied bytes to the pipe using a background thread.
 
-        This also accepts a string, in which case it converts any "\n"
-        characters to os.linesep and encodes the result as UTF-8.
+        This also accepts a string, in which case it converts any ``\n``
+        characters to ``os.linesep`` and encodes the result as UTF-8.
 
         >>> cmd("cat").stdin_bytes(b"foo").read()
         'foo'
@@ -248,7 +263,7 @@ class Expression:
         return Expression(STDIN_FILE, self, file_)
 
     def stdin_null(self):
-        r"""Redirect the standard input of the expression to `/dev/null`.
+        r"""Redirect the standard input of the expression to ``/dev/null``.
 
         >>> cmd("cat").stdin_null().read()
         ''
@@ -280,7 +295,7 @@ class Expression:
         return Expression(STDOUT_FILE, self, file_)
 
     def stdout_null(self):
-        r"""Redirect the standard output of the expression to `/dev/null`.
+        r"""Redirect the standard output of the expression to ``/dev/null``.
 
         >>> cmd("echo", "hi").stdout_null().run()
         Output(status=0, stdout=None, stderr=None)
@@ -289,7 +304,7 @@ class Expression:
 
     def stdout_capture(self):
         r"""Capture the standard output of the expression. The captured bytes
-        become the `stdout` field of the returned :class:`Output`.
+        become the ``stdout`` field of the returned :class:`Output`.
 
         >>> cmd("echo", "hi").stdout_capture().run()
         Output(status=0, stdout=b'hi\n', stderr=None)
@@ -297,11 +312,11 @@ class Expression:
         return Expression(STDOUT_CAPTURE, self)
 
     def stdout_to_stderr(self):
-        r"""Merge the standard error of the expression with its stdout.
+        r"""Merge the standard output of the expression with its stderr.
 
-        >>> bash_cmd = "echo out && echo err 1>&2"
-        >>> cmd("bash", "-c", bash_cmd).stderr_to_stdout().read()
-        'out\nerr'
+        >>> bash_cmd = cmd("bash", "-c", "echo out && echo err 1>&2")
+        >>> bash_cmd.stdout_to_stderr().stdout_capture().stderr_capture().run()
+        Output(status=0, stdout=b'', stderr=b'out\nerr\n')
         """
         return Expression(STDOUT_TO_STDERR, self)
 
@@ -330,7 +345,7 @@ class Expression:
         return Expression(STDERR_FILE, self, file_)
 
     def stderr_null(self):
-        r"""Redirect the standard error of the expression to `/dev/null`.
+        r"""Redirect the standard error of the expression to ``/dev/null``.
 
         >>> cmd("bash", "-c", "echo hi 1>&2").stderr_null().run()
         Output(status=0, stdout=None, stderr=None)
@@ -339,7 +354,7 @@ class Expression:
 
     def stderr_capture(self):
         r"""Capture the standard error of the expression. The captured bytes
-        become the `stderr` field of the returned :class:`Output`.
+        become the ``stderr`` field of the returned :class:`Output`.
 
         >>> cmd("bash", "-c", "echo hi 1>&2").stderr_capture().run()
         Output(status=0, stdout=None, stderr=b'hi\n')
@@ -347,27 +362,131 @@ class Expression:
         return Expression(STDERR_CAPTURE, self)
 
     def stderr_to_stdout(self):
+        r"""Merge the standard error of the expression with its stdout.
+
+        >>> bash_cmd = cmd("bash", "-c", "echo out && echo err 1>&2")
+        >>> bash_cmd.stderr_to_stdout().stdout_capture().stderr_capture().run()
+        Output(status=0, stdout=b'out\nerr\n', stderr=b'')
+        """
         return Expression(STDERR_TO_STDOUT, self)
 
     def stdout_stderr_swap(self):
+        r"""Swap the standard output and standard error of the expression.
+
+        >>> bash_cmd = cmd("bash", "-c", "echo out && echo err 1>&2")
+        >>> swapped_cmd = bash_cmd.stdout_stderr_swap()
+        >>> swapped_cmd.stdout_capture().stderr_capture().run()
+        Output(status=0, stdout=b'err\n', stderr=b'out\n')
+        """
         return Expression(STDOUT_STDERR_SWAP, self)
 
     def dir(self, path):
+        r"""Set the working directory for the expression.
+
+        >>> cmd("pwd").dir("/tmp").read()
+        '/tmp'
+
+        Note that :func:`dir` does *not* affect the meaning of relative exe
+        paths.  For example in the expression ``cmd("./foo.sh").dir("bar")``,
+        the script ``./foo.sh`` will execute, *not* the script
+        ``./bar/foo.sh``. However, it usually *does* affect how the child
+        process interprets relative paths in command arguments.
+        """
         return Expression(DIR, self, path)
 
     def env(self, name, val):
+        r"""Set an environment variable in the expression's environment.
+
+        >>> cmd("bash", "-c", "echo $FOO").env("FOO", "bar").read()
+        'bar'
+        """
         return Expression(ENV, self, (name, val))
 
     def env_remove(self, name):
+        r"""Unset an environment variable in the expression's environment.
+
+        >>> os.environ["FOO"] = "bar"
+        >>> cmd("bash", "-c", "echo $FOO").env_remove("FOO").read()
+        ''
+
+        Note that all of Duct's ``env`` functions follow OS rules for
+        environment variable case sensitivity. That means that
+        ``env_remove("foo")`` will unset ``FOO`` on Windows (where ``foo`` and
+        ``FOO`` are equivalent) but not on Unix (where they are separate
+        variables). Portable programs should restrict themselves to uppercase
+        environment variable names for that reason.
+        """
         return Expression(ENV_REMOVE, self, name)
 
     def full_env(self, env_dict):
+        r"""Set the entire environment for the expression, from a dictionary of
+        name-value pairs.
+
+        >>> os.environ["FOO"] = "bar"
+        >>> os.environ["BAZ"] = "bing"
+        >>> cmd("bash", "-c", "echo $FOO$BAZ").full_env({"FOO": "xyz"}).read()
+        'xyz'
+
+        Note that some environment variables are required for normal program
+        execution (like SystemRoot on Windows), so copying the parent's
+        environment is usually preferable to starting with an empty one.
+        """
         return Expression(FULL_ENV, self, env_dict)
 
     def unchecked(self):
+        r"""Prevent a non-zero exit status from raising a :class:`StatusError`.
+        The unchecked exit code will still be there on the :class:`Output`
+        returned by :func:`run`; its value doesn't change.
+
+        >>> cmd("false").run()
+        Traceback (most recent call last):
+        ...
+        duct.StatusError: Expression cmd('false') returned non-zero exit status: Output(status=1, stdout=None, stderr=None)
+        >>> cmd("false").unchecked().run()
+        Output(status=1, stdout=None, stderr=None)
+
+        "Uncheckedness" sticks to an exit code as it propagates up from part of
+        a pipeline, but it doesn't "infect" other exit codes. So for example,
+        if only one sub-expression in a pipe is :func:`unchecked`, then errors
+        returned by the other side will still be checked.
+
+        >>> cmd("false").pipe(cmd("true")).unchecked().run()
+        Output(status=1, stdout=None, stderr=None)
+        >>> cmd("false").unchecked().pipe(cmd("true")).run()
+        Output(status=1, stdout=None, stderr=None)
+        >>> cmd("false").pipe(cmd("true").unchecked()).run()
+        Traceback (most recent call last):
+        ...
+        duct.StatusError: Expression cmd('false').pipe(cmd('true').unchecked()) returned non-zero exit status: Output(status=1, stdout=None, stderr=None)
+        """  # noqa: E501
         return Expression(UNCHECKED, self)
 
     def before_spawn(self, callback):
+        r"""
+        Add a callback for modifying the arguments to :func:`Popen` right
+        before it's called. The callback will be passed a command list (the
+        program followed by its arguments) and a keyword arguments dictionary,
+        and it may modify either. The callback's return value is ignored.
+
+        The callback is called for each command in its sub-expression, and each
+        time the expression is executed. That call happens after other features
+        like :func:`stdout` and :func:`env` have been applied, so any changes
+        made by the callback take priority. More than one callback can be
+        added, in which case the innermost is executed last. For example, if
+        one call to :func:`before_spawn` is applied to an entire :func:`pipe`
+        expression, and another call is applied to just one command within the
+        pipeline, the callback for the entire pipeline will be called first
+        over the command where both hooks apply.
+
+        This is intended for rare and tricky cases, like callers who want to
+        change the group ID of their child processes, or who want to run code
+        in :func:`Popen.preexec_fn`. Most callers shouldn't need to use it.
+
+        >>> def add_sneaky_arg(command, kwargs):
+        ...     command.append("sneaky!")
+        >>> cmd("echo", "being").before_spawn(add_sneaky_arg).read()
+        'being sneaky!'
+        """
         return Expression(BEFORE_SPAWN, self, callback)
 
 
@@ -539,15 +658,28 @@ def modify_context(expression, context, payload_cell):
 
 
 class Output(namedtuple('Output', ['status', 'stdout', 'stderr'])):
-    """The return type of :func:`run` and :func:`wait`. It carries the pubic
-    fields `status`, `stdout`, and `stderr`.
+    r"""The return type of :func:`Expression.run` and :func:`Handle.wait`. It
+    carries the pubic fields ``status``, ``stdout``, and ``stderr``. If
+    :func:`Expression.stdout_capture` and :func:`Expression:stderr_capture`
+    aren't used, ``stdout`` and ``stderr`` respectively will be ``None``.
+
+    >>> cmd("bash", "-c", "echo hi 1>&2").stderr_capture().run()
+    Output(status=0, stdout=None, stderr=b'hi\n')
     """
     __slots__ = ()
 
 
 class StatusError(subprocess.CalledProcessError):
-    """The exception raised by default when a child exits with a non-zero exit
-    status. See the :func:`unchecked` method for suppressing this.
+    r"""The exception raised by default when a child exits with a non-zero exit
+    status. See :func:`Expression.unchecked` for suppressing this. If the
+    exception is caught, the ``output`` field contains the :class:`Output`.
+
+    >>> from duct import StatusError
+    >>> try:
+    ...     cmd("bash", "-c", "echo hi 1>&2 && false").stderr_capture().run()
+    ... except StatusError as e:
+    ...     e.output
+    Output(status=1, stdout=None, stderr=b'hi\n')
     """
     def __init__(self, output, expression_str):
         self.output = output
@@ -559,7 +691,12 @@ class StatusError(subprocess.CalledProcessError):
 
 
 class Handle:
-    """A handle.
+    r"""A handle representing one or more running child processes, returned by
+    the :func:`Expression.start` method.
+
+    Note that leaking a :class:`Handle` without calling :func:`wait` will turn
+    the children into zombie processes. In a long-running program, that could
+    be serious resource leak.
     """
     def __init__(self, _type, inner, payload, expression_str,
                  stdout_capture_context, stderr_capture_context):
@@ -571,12 +708,31 @@ class Handle:
         self._stderr_capture_context = stderr_capture_context
 
     def wait(self):
+        r"""Wait for the child process(es) to finish and return an
+        :class:`Output` containing the exit status and any captured output.
+        This frees the OS resources associated with the child.
+
+        >>> handle = cmd("true").start()
+        >>> handle.wait()
+        Output(status=0, stdout=None, stderr=None)
+        """
         status, output = wait_on_status_and_output(self)
         if is_checked_error(status):
             raise StatusError(output, self._expression_str)
         return output
 
     def try_wait(self):
+        r"""Check whether the child process(es) have finished, and if so return
+        an :class:`Output` containing the exit status and any captured output.
+        If the child has exited, this frees the OS resources associated with
+        it.
+
+        >>> handle = cmd("sleep", "1000").unchecked().start()
+        >>> assert handle.try_wait() is None
+        >>> handle.kill_and_wait()
+        >>> handle.try_wait()
+        Output(status=-9, stdout=None, stderr=None)
+        """
         status = wait_on_status(self, False)
         if status is None:
             return None
@@ -584,6 +740,19 @@ class Handle:
             return self.wait()
 
     def kill_and_wait(self):
+        r"""Send a kill signal to the child process(es). This is equivalent to
+        :func:`Popen.kill`, which uses ``SIGKILL`` on Unix. After sending the
+        signal, wait for the child to finish and free the OS resources
+        associated with it.
+
+        This function does not return an :class:`Output`, and it does not raise
+        :class:`StatusError`. However, subsequent calls to :func:`wait` or
+        :func:`try_wait` are likely to raise :class:`StatusError` if you didn't
+        use :func:`Expression.unchecked`.
+
+        >>> handle = cmd("sleep", "1000").start()
+        >>> handle.kill_and_wait()
+        """
         kill(self)
         wait_on_status_and_output(self)
 
@@ -903,13 +1072,16 @@ def maybe_canonicalize_exe_path(exe_name, iocontext):
 
 popen_lock = threading.Lock()
 
+
 # This wrapper works around two major deadlock issues to do with pipes. The
 # first is that, before Python 3.2 on POSIX systems, os.pipe() creates
 # inheritable file descriptors, which leak to all child processes and prevent
 # reads from reaching EOF. The workaround for this is to set close_fds=True on
 # POSIX, which was not the default in those versions. See PEP 0446 for many
 # details.
-
+#
+# TODO: Revisit this workaround when we drop Python 2 support.
+#
 # The second issue arises on Windows, where we're not allowed to set
 # close_fds=True while also setting stdin/stdout/stderr. Descriptors from
 # os.pipe() on Windows have never been inheritable, so it would seem that we're
@@ -917,8 +1089,7 @@ popen_lock = threading.Lock()
 # temporary inheritable copies of its descriptors, and these can leak. The
 # workaround for this is to protect Popen() with a global lock. See
 # https://bugs.python.org/issue25565.
-
-
+#
 # This function also returns a SharedChild object, which wraps
 # subprocess.Popen. That type works around another race condition to do with
 # signaling children.
@@ -1053,16 +1224,18 @@ class SharedChild:
 
 
 class ReaderHandle(io.BufferedIOBase):
-    """A stdout reader that automatically closes its read pipe and awaits child
-    processes once EOF is reached.
+    r"""A stdout reader that automatically closes its read pipe and awaits
+    child processes once EOF is reached.
 
     This inherits from :class:`io.BufferedIOBase`, and you can call
-    :func:`read` and related methods on it. If the child exits with a non-zero
-    status, and :func:`unchecked` was not used, the final :func:`read` will
-    raise a :class:`StatusError`.
+    :func:`read` and related methods on it (:func:`readline`,
+    :func:`readlines`). When :class:`ReaderHandle` is used as a context manager
+    with the ``with`` keyword, context exit will automatically call
+    :func:`close`.
 
-    When a :class:`ReaderHandle` is used as a context manager, context exit
-    will automatically call :func:`close`.
+    If the child exits with a non-zero status, and :func:`unchecked` was not
+    used, the :func:`read` call that would have returned EOF (that is, ``b""``)
+    will instead raise a :class:`StatusError`.
     """
     def __init__(self, handle, read_pipe):
         self._handle = handle
@@ -1083,7 +1256,7 @@ class ReaderHandle(io.BufferedIOBase):
         return ret
 
     def close(self):
-        """Close the read pipe and, if EOF has not already been read, call
+        r"""Close the read pipe and, if EOF has not already been read, call
         :func:`kill_and_wait` on the inner :class:`Handle`.
         """
         if self._read_pipe is not None:
