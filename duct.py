@@ -114,7 +114,7 @@ NAMES = {
 
 
 def cmd(prog, *args):
-    """Build a command :class:`Expression` from a program name and any number
+    r"""Build a command :class:`Expression` from a program name and any number
     of arguments.
 
     This is the sole entry point to Duct. All the types below are built with
@@ -127,7 +127,7 @@ def cmd(prog, *args):
 
 
 class Expression:
-    """An expression object representing a command or a pipeline of commands.
+    r"""An expression object representing a command or a pipeline of commands.
 
     Build command expressions with the :func:`cmd` function. Build pipelines
     with the :func:`pipe` method. Methods like :func:`stdout_path` and
@@ -144,7 +144,7 @@ class Expression:
         return repr_expression(self)
 
     def run(self):
-        """Execute the expression and return an :class:`Output`, which includes
+        r"""Execute the expression and return an :class:`Output`, which includes
         the exit status and any captured output. Raise an exception if the
         status is non-zero.
 
@@ -154,7 +154,7 @@ class Expression:
         return self.start().wait()
 
     def read(self):
-        """Execute the expression and capture its output, similar to backticks
+        r"""Execute the expression and capture its output, similar to backticks
         or $() in the shell.
 
         This is a wrapper around reader() which reads to EOF, decodes UTF-8,
@@ -226,39 +226,124 @@ class Expression:
         return Expression(STDIN_BYTES, self, buf)
 
     def stdin_path(self, path):
+        r"""Redirect the standard input of the expression to a file opened from
+        the supplied filepath.
+
+        This works with strings, bytes, and pathlib :class:`Path` objects.
+
+        >>> cmd("head", "-c10").stdin_path("/dev/zero").read()
+        '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        """
         return Expression(STDIN_PATH, self, path)
 
     def stdin_file(self, file_):
+        r"""Redirect the standard input of the expression to the supplied file.
+        This works with any file-like object accepted by :class:`Popen`,
+        including raw file descriptors.
+
+        >>> f = open("/dev/zero")
+        >>> cmd("head", "-c10").stdin_file(f).read()
+        '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        """
         return Expression(STDIN_FILE, self, file_)
 
     def stdin_null(self):
+        r"""Redirect the standard input of the expression to `/dev/null`.
+
+        >>> cmd("cat").stdin_null().read()
+        ''
+        """
         return Expression(STDIN_NULL, self)
 
     def stdout_path(self, path):
+        r"""Redirect the standard output of the expression to a file opened
+        from the supplied filepath.
+
+        This works with strings, bytes, and pathlib :class:`Path` objects.
+
+        >>> cmd("echo", "hi").stdout_path("/tmp/outfile").run()
+        Output(status=0, stdout=None, stderr=None)
+        >>> open("/tmp/outfile").read()
+        'hi\n'
+        """
         return Expression(STDOUT_PATH, self, path)
 
     def stdout_file(self, file_):
+        r"""Redirect the standard output of the expression to the supplied file.
+        This works with any file-like object accepted by :class:`Popen`,
+        including raw file descriptors.
+
+        >>> f = open("/dev/null", "w")
+        >>> cmd("echo", "hi").stdout_file(f).run()
+        Output(status=0, stdout=None, stderr=None)
+        """
         return Expression(STDOUT_FILE, self, file_)
 
     def stdout_null(self):
+        r"""Redirect the standard output of the expression to `/dev/null`.
+
+        >>> cmd("echo", "hi").stdout_null().run()
+        Output(status=0, stdout=None, stderr=None)
+        """
         return Expression(STDOUT_NULL, self)
 
     def stdout_capture(self):
+        r"""Capture the standard output of the expression. The captured bytes
+        become the `stdout` field of the returned :class:`Output`.
+
+        >>> cmd("echo", "hi").stdout_capture().run()
+        Output(status=0, stdout=b'hi\n', stderr=None)
+        """
         return Expression(STDOUT_CAPTURE, self)
 
     def stdout_to_stderr(self):
+        r"""Merge the standard error of the expression with its stdout.
+
+        >>> bash_cmd = "echo out && echo err 1>&2"
+        >>> cmd("bash", "-c", bash_cmd).stderr_to_stdout().read()
+        'out\nerr'
+        """
         return Expression(STDOUT_TO_STDERR, self)
 
     def stderr_path(self, path):
+        r"""Redirect the standard error of the expression to a file opened from
+        the supplied filepath.
+
+        This works with strings, bytes, and pathlib :class:`Path` objects.
+
+        >>> cmd("bash", "-c", "echo hi 1>&2").stderr_path("/tmp/outfile").run()
+        Output(status=0, stdout=None, stderr=None)
+        >>> open("/tmp/outfile").read()
+        'hi\n'
+        """
         return Expression(STDERR_PATH, self, path)
 
     def stderr_file(self, file_):
+        r"""Redirect the standard error of the expression to the supplied file.
+        This works with any file-like object accepted by :class:`Popen`,
+        including raw file descriptors.
+
+        >>> f = open("/dev/null", "w")
+        >>> cmd("bash", "-c", "echo hi 1>&2").stderr_file(f).run()
+        Output(status=0, stdout=None, stderr=None)
+        """
         return Expression(STDERR_FILE, self, file_)
 
     def stderr_null(self):
+        r"""Redirect the standard error of the expression to `/dev/null`.
+
+        >>> cmd("bash", "-c", "echo hi 1>&2").stderr_null().run()
+        Output(status=0, stdout=None, stderr=None)
+        """
         return Expression(STDERR_NULL, self)
 
     def stderr_capture(self):
+        r"""Capture the standard error of the expression. The captured bytes
+        become the `stderr` field of the returned :class:`Output`.
+
+        >>> cmd("bash", "-c", "echo hi 1>&2").stderr_capture().run()
+        Output(status=0, stdout=None, stderr=b'hi\n')
+        """
         return Expression(STDERR_CAPTURE, self)
 
     def stderr_to_stdout(self):
@@ -454,7 +539,8 @@ def modify_context(expression, context, payload_cell):
 
 
 class Output(namedtuple('Output', ['status', 'stdout', 'stderr'])):
-    """The return type of :func:`run` and :func:`wait`.
+    """The return type of :func:`run` and :func:`wait`. It carries the pubic
+    fields `status`, `stdout`, and `stderr`.
     """
     __slots__ = ()
 
