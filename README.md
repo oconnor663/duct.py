@@ -6,7 +6,7 @@ the same time, Duct makes it easier to write correct code. Whitespace is
 never significant, and errors from child processes become exceptions by
 default. Duct also takes care of a surprising variety of [gotchas, bugs,
 and platform
-inconsistencies](https://github.com/oconnor663/duct.py/blob/master/spec.md),
+inconsistencies](https://github.com/oconnor663/duct.py/blob/master/gotchas.md),
 to help simple programs do the right thing in tricky edge cases.
 
 - [Documentation](https://ductpy.readthedocs.io)

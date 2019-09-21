@@ -4,8 +4,9 @@ convenience of a shell, building pipelines and redirecting IO. At the same
 time, Duct makes it easier to write correct code. Whitespace is never
 significant, and errors from child processes become exceptions by default. Duct
 also takes care of a surprising variety of `gotchas, bugs, and platform
-inconsistencies <https://github.com/oconnor663/duct.py/blob/master/spec.md>`_,
-to help simple programs do the right thing in tricky edge cases.
+inconsistencies
+<https://github.com/oconnor663/duct.py/blob/master/gotchas.md>`_, to help
+simple programs do the right thing in tricky edge cases.
 
 - `GitHub repo <https://github.com/oconnor663/duct.rs>`_
 - `PyPI package <https://pypi.python.org/pypi/duct>`_
