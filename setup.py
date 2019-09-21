@@ -2,7 +2,8 @@ import setuptools
 
 setuptools.setup(
     name='duct',
-    description='a library for shelling out and piping subprocesses',
+    description='a library for running child processes',
+    long_description=open("README.md").read(),
     license='MIT',
     url='https://github.com/oconnor663/duct.py',
     author="Jack O'Connor",

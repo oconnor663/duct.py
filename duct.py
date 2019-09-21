@@ -1,8 +1,18 @@
 r"""\
-Duct is a library for running child processes. It helps you make pipelines and
-redirect output in other ways. Duct also takes care of a variety of `gotchas,
-bugs, and Unix/Windows compatibility issues
-<https://github.com/oconnor663/duct.py/blob/master/spec.md>`_.
+Duct is a library for running child processes. It provides the control and
+convenience of a shell, building pipelines and redirecting IO. At the same
+time, Duct makes it easier to write correct code. Whitespace is never
+significant, and errors from child processes become exceptions by default. Duct
+also takes care of a surprising variety of `gotchas, bugs, and platform
+inconsistencies <https://github.com/oconnor663/duct.py/blob/master/spec.md>`_,
+to help simple programs do the right thing in tricky edge cases.
+
+- `GitHub repo <https://github.com/oconnor663/duct.rs>`_
+- `PyPI package <https://pypi.python.org/pypi/duct>`_
+- `the same library, in Rust <https://github.com/oconnor663/duct.rs>`_
+
+Examples
+--------
 
 Run a command that writes to the terminal as usual:
 
@@ -23,7 +33,8 @@ Capture the output of a pipeline:
 Merge stderr into stdout and read both incrementally:
 
 >>> reader = cmd("bash", "-c", "echo out && echo err 1>&2").stderr_to_stdout().reader()
->>> reader.readlines()
+>>> with reader:
+...     reader.readlines()
 [b'out\n', b'err\n']
 
 Children that exit with a non-zero status raise an exception by default:
