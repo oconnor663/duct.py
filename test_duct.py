@@ -1,7 +1,6 @@
 # coding=UTF-8
 
 import binascii
-import io
 import os
 import sys
 import tempfile
