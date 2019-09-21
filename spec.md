@@ -20,7 +20,13 @@ IO](#using-background-threads-for-io) sections.
 All methods of waiting on a child process should return errors or throw
 exceptions by default when the child exits with a non-zero status. That
 includes the stdout reader, once it reaches EOF. The only two exceptions to
-this are the `unchecked` method and the combined `kill_and_wait` operation.
+this are the `unchecked` method and the `kill` operation.
+
+## Killing should await the child
+
+The waiting step is almost always necessary to avoid leaking a zombie process.
+The `kill` method should take care of it, instead of requiring the caller to
+remember.
 
 ## SIGPIPE
 

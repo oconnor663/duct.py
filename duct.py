@@ -729,7 +729,7 @@ class Handle:
 
         >>> handle = cmd("sleep", "1000").unchecked().start()
         >>> assert handle.try_wait() is None
-        >>> handle.kill_and_wait()
+        >>> handle.kill()
         >>> handle.try_wait()
         Output(status=-9, stdout=None, stderr=None)
         """
@@ -739,7 +739,7 @@ class Handle:
         else:
             return self.wait()
 
-    def kill_and_wait(self):
+    def kill(self):
         r"""Send a kill signal to the child process(es). This is equivalent to
         :func:`Popen.kill`, which uses ``SIGKILL`` on Unix. After sending the
         signal, wait for the child to finish and free the OS resources
@@ -752,7 +752,7 @@ class Handle:
         use :func:`Expression.unchecked`.
 
         >>> handle = cmd("sleep", "1000").start()
-        >>> handle.kill_and_wait()
+        >>> handle.kill()
         """
         kill(self)
         wait_on_status_and_output(self)
@@ -1277,7 +1277,7 @@ class ReaderHandle(io.IOBase):
         return ret
 
     def close(self):
-        r"""Close the read pipe and call :func:`kill_and_wait` on the inner
+        r"""Close the read pipe and call :func:`kill` on the inner
         :class:`Handle`.
 
         :class:`ReaderHandle` is a context manager, and if you use it with the
@@ -1288,6 +1288,6 @@ class ReaderHandle(io.IOBase):
         >>> reader.close()
         """
         if self._read_pipe is not None:
-            self._handle.kill_and_wait()  # Does not raise StatusError.
+            self._handle.kill()  # Does not raise StatusError.
             self._read_pipe.close()
             self._read_pipe = None

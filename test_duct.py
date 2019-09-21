@@ -532,9 +532,9 @@ def test_wait_and_kill():
     handle = sleep_cmd(1000000).pipe(cat_cmd()).env("A", "B").start()
     assert handle.try_wait() is None
     assert handle.try_wait() is None
-    handle.kill_and_wait()
+    handle.kill()
     # Twice to exercise the already-waited branches.
-    handle.kill_and_wait()
+    handle.kill()
     with raises(StatusError):
         handle.wait()
 
