@@ -1,12 +1,11 @@
 r"""\
-Duct is a library for running child processes. It provides the control and
-convenience of a shell, building pipelines and redirecting IO. At the same
-time, Duct makes it easier to write correct code. Whitespace is never
-significant, and errors from child processes become exceptions by default. Duct
-also takes care of a surprising variety of `gotchas, bugs, and platform
-inconsistencies
-<https://github.com/oconnor663/duct.py/blob/master/gotchas.md>`_, to help
-simple programs do the right thing in tricky edge cases.
+Duct is a library for running child processes. Duct makes it easy to build
+pipelines and redirect IO like a shell. At the same time, Duct helps you write
+correct, portable code: whitespace is never significant, errors from child
+processes get reported by default, and a variety of `gotchas, bugs, and
+platform inconsistencies
+<https://github.com/oconnor663/duct.py/blob/master/gotchas.md>`_ are handled
+for you the Right Way™.
 
 - `GitHub repo <https://github.com/oconnor663/duct.rs>`_
 - `PyPI package <https://pypi.python.org/pypi/duct>`_
@@ -15,25 +14,28 @@ simple programs do the right thing in tricky edge cases.
 Examples
 --------
 
-Run a command that writes to the terminal as usual:
+Run a command without capturing any output. Here "hi" is printed directly to
+the terminal:
 
 >>> from duct import cmd
->>> cmd("true").run()
+>>> cmd("echo", "hi").run() # doctest: +SKIP
+hi
 Output(status=0, stdout=None, stderr=None)
 
-Capture the output of a command:
+Capture the standard output of a command. Here "hi" is returned as a string:
 
 >>> cmd("echo", "hi").read()
 'hi'
 
-Capture the output of a pipeline:
+Capture the standard output of a pipeline:
 
 >>> cmd("echo", "hi").pipe(cmd("sed", "s/i/o/")).read()
 'ho'
 
-Merge stderr into stdout and read both incrementally:
+Merge standard error into standard output and read both incrementally:
 
->>> reader = cmd("bash", "-c", "echo out && echo err 1>&2").stderr_to_stdout().reader()
+>>> big_cmd = cmd("bash", "-c", "echo out && echo err 1>&2")
+>>> reader = big_cmd.stderr_to_stdout().reader()
 >>> with reader:
 ...     reader.readlines()
 [b'out\n', b'err\n']
