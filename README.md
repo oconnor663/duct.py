@@ -12,6 +12,18 @@ are handled for you the Right Way™.
 - [PyPI package](https://pypi.python.org/pypi/duct)
 - [the same library, in Rust](https://github.com/oconnor663/duct.rs)
 
+Changelog
+---------
+
+- v0.6.0
+  - Removed the `sh` function.
+  - Removed the `then` method.
+  - Add `Handle.kill`.
+  - Add `ReaderHandle` and `Expression.reader()`.
+  - Rename `stdin`/`stdout`/`stderr` to
+    `stdin_path`/`stdout_path`/`stderr_path`.
+  - This will be the last major release supporting Python 2.
+
 Examples
 --------
 
