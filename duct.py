@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 r"""\
 Duct is a library for running child processes. Duct makes it easy to build
 pipelines and redirect IO like a shell. At the same time, Duct helps you write
