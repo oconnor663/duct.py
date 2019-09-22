@@ -19,9 +19,12 @@ Changelog
   - Removed the `sh` function.
   - Removed the `then` method.
   - Added `Handle.kill`.
-  - Added `ReaderHandle` and `Expression.reader()`.
+  - Added `ReaderHandle` and `Expression.reader`.
+  - Added `Expression.stdout_stderr_swap`.
+  - Added `Expression.before_spawn`.
   - Renamed `stdin`/`stdout`/`stderr` to
     `stdin_path`/`stdout_path`/`stderr_path`.
+  - Renamed `input` to `stdin_bytes`.
   - This will be the last major release supporting Python 2.
 
 Examples
