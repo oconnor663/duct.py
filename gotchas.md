@@ -113,8 +113,8 @@ interpreted from the child's.
 
 The Windows behavior is preferable, because it lets you add a `dir` argument
 without breaking any existing relative program paths. Duct provides this
-behavior on all platforms, by absolutifying relative program paths on Unix-like
-platforms when the `dir` method is in use.
+behavior on all platforms, by canonicalizing relative program paths on
+Unix-like platforms when the `dir` method is in use.
 
 ## Preventing pipe inheritance races on Windows
 
