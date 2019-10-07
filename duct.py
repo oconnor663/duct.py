@@ -1251,6 +1251,12 @@ class ReaderHandle(io.IOBase):
     Note that if you don't read to EOF, and you don't call :func:`close` or use
     a ``with`` statement, then the child will become a zombie. Using a ``with``
     statement is recommended for exception safety.
+
+    If one thread is blocked on a call to :func:`read`, then calling
+    :func:`kill` from another thread is an effective way to unblock the reader.
+    However, note that killed child processes return a non-zero exit status,
+    which turns into an exception for the reader by default, unless you use
+    :func:`Expression.unchecked`.
     """
     def __init__(self, handle, read_pipe):
         self._handle = handle
@@ -1306,3 +1312,20 @@ class ReaderHandle(io.IOBase):
             self._handle.kill()  # Does not raise StatusError.
             self._read_pipe.close()
             self._read_pipe = None
+
+    def kill(self):
+        r"""Call :func:`kill` on the inner :class:`Handle`.
+
+        This function does not raise :class:`StatusError`. However, subsequent
+        calls to :func:`read` are likely to raise :class:`StatusError` if you
+        didn't use :func:`Expression.unchecked`.
+
+        >>> reader = cmd("bash", "-c", "echo hi && sleep 1000000").unchecked().reader()
+        >>> with reader:
+        ...     reader.read(3)
+        ...     reader.kill()
+        ...     reader.read()
+        b'hi\n'
+        b''
+        """  # noqa: E501
+        self._handle.kill()
