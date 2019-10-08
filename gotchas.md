@@ -209,3 +209,85 @@ would be a deadlock, and it would probably be difficult to reproduce and debug.
 For this reason, the `start` method must use threads to supply input and
 capture output. That guarantees that the parent will never cause its children
 to block, regardless of its order of operations after `start`.
+
+## Killing grandchildren processes?
+
+**Currently unsolved.** This is something of a disaster area in Unix process
+management. Consider the following two scripts. Here's `test1.py`:
+
+```python
+import subprocess
+subprocess.run(["sleep", "100"])
+```
+
+And here's `test2.py`:
+
+```python
+import subprocess
+import time
+p = subprocess.Popen(["python", "./test1.py"])
+time.sleep(1)
+p.kill()
+p.wait()
+```
+
+That is, `test1.py` starts a `sleep` child process and then waits on it. And
+`test2.py` starts `test1.py`, waits for a second, and then kills it. The
+question is, if you run `test2.py`, what happpens to the `sleep` process? If
+you look at something like `pgrep sleep` after `test2.py` exits, you'll see
+that `sleep` is _still running_. Maybe that's not entirely surprising, since we
+only killed `test1.py` and didn't explicitly kill `sleep`. But compare that to
+what happens if you start `test2.py` and then quickly press Ctrl-C. In that
+case, `sleep` is killed. What the hell!
+
+What's going on is that there's a difference between signaling a process ID and
+signaling a [process group ID](https://en.wikipedia.org/wiki/Process_group).
+The `kill` function in Python (and Bash and pretty much every other language)
+does the former, which only kills a single process. Ctrl-C in the shell does
+the latter, which kills a whole tree of child processes at once. Process group
+signaling is a great way to cancel an "entire job" reliably, even if that job
+has spawned more child processes. So why do existing `kill` functions use the
+surprisingly weak sauce that is individual process signaling?
+
+The sad truth is that process group signaling basically only works for shells.
+When the shell forks a child process, before it calls `exec`, it calls
+`setpgid` to set a new process group ID. Because child processes typically do
+_not_ call `setpgid` themselves, the child process and all of its transitive
+children end up in the same process group (which typically has a group ID equal
+to the process ID of the original child). However, if one of those child
+processes _does_ call `setpgid`, the relationship between it and the other
+children gets lost. Ctrl-C and Ctrl-Z stop working properly. The fundamental
+issue is that each process only has a single process group ID. Process groups
+do not form a tree.
+
+What does form a tree, however, is process IDs themselves. Each process knows
+the ID of its parent, so it's possible to query a process's full transitive
+tree of children. The problem with using such a query for signaling purposes is
+that it's racy. In the time between when you run the query and when you send
+signals, any process in the tree may have spawned new children. (Even worse,
+some processes might've exited, and those PIDs might've been reused for
+processes that aren't in the tree.) We can _just barely almost_ solve that
+problem by killing a child process, not reaping it yet, and querying the child
+processes of the zombie. But alas, that strategy only works for one level of
+the tree, as the OS automatically reaps any zombie whose parent is also a
+zombie. So close!
+
+The modern solution for all of this on Linux is supposed to be
+[cgroups](https://en.wikipedia.org/wiki/Cgroups). But as if to rub salt in our
+wounds, it turns out there's [no way to atomically signal a
+cgroup](https://jdebp.eu/FGA/linux-control-groups-are-not-jobs.html). Systemd
+works around this problem with a kill loop that repeatedly queries the PIDs in
+a cgroup and tries to kill all of them individually. And it's _still_
+vulnerable to the PID reuse race. Solving those races might be possible by
+abusing SIGSTOP (you better hope you're the only part of the system possibly
+sending SIGCONT to unrelated processes) or something called "the freezer",
+though if Systemd doesn't attempt to use those techniques that's a pretty bad
+sign.
+
+Linux has umpteen different reasons to add some notion of "process handles",
+but it hasn't happened yet, and I don't see any solid evidence that it's going
+to happen. Windows seems to have a cleaner solution for all of this ([job
+objects](https://docs.microsoft.com/en-us/windows/win32/procthread/job-objects)),
+though even there it sounds like some important features aren't supported on
+Windows 7. Realistically, there won't be good techniques for Duct to use to
+solve this problem for many years.
