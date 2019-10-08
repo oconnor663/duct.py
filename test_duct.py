@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import textwrap
+import time
 
 from pytest import raises, mark
 
@@ -382,14 +383,19 @@ def test_checked_error_contains_status():
         assert '123' in str(e)
 
 
-def test_ThreadWithReturn_reraises_exceptions():
+def test_DaemonicThread_reraises_exceptions():
     def t():
         raise ZeroDivisionError
 
-    thread = duct.ThreadWithReturn(t)
+    thread = duct.DaemonicThread(t)
     thread.start()
     with raises(ZeroDivisionError):
         thread.join()
+
+    # Kick off another DaemonicThread that will never exit. This tests that we
+    # set the daemon flag correctly, otherwise the whole test suite will hang
+    # at the end.
+    duct.DaemonicThread(lambda: time.sleep(1000000)).start()
 
 
 def test_invalid_io_args():
@@ -621,3 +627,44 @@ def test_reader_with():
     assert reader._read_pipe is None
     with raises(StatusError):
         reader.read()
+
+
+def test_kill_with_grandchild():
+    # We're going to start a child process, and that child is going to start a
+    # grandchild. The grandchild is going to sleep forever. We'll read some
+    # output from the child to make sure it's done starting the grandchild, and
+    # then we'll kill the child. Now, the grandchild will not be killed, and it
+    # will still hold a write handle to the stdout pipe. So this tests that the
+    # wait done by kill only waits on the child to exit, and does not wait on
+    # IO to finish.
+    #
+    # This test leaks the grandchild process. I'm sorry.
+
+    grandchild_code = r"""
+import time
+
+time.sleep(24 * 60 * 60)  # sleep for 1 day
+"""
+
+    child_code = r"""
+import subprocess
+import sys
+
+p = subprocess.Popen(["python", "-c", '''{}'''])
+print("started")
+sys.stdout.flush()
+p.wait()
+""".format(grandchild_code)
+
+    # Capturing stderr means an IO thread is spawned, even though we're using a
+    # ReaderHandle to read stdout. What we're testing here is that kill()
+    # doesn't wait on that IO thread.
+    reader = cmd("python", "-c", child_code).stderr_capture().reader()
+    # Read "started" from the child to make sure we don't kill it before it
+    # starts the grandchild.
+    assert reader.read(7) == b"started"
+    # Ok, this had better not block!
+    reader.kill()
+    # Incidentally this also implicitly tests that background threads are
+    # daemonic, like test_DaemonicThread_reraises_exceptions does. Otherwise
+    # the test suite will block on exit.

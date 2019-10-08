@@ -770,7 +770,12 @@ class Handle:
         >>> handle.kill()
         """
         kill(self)
-        wait_on_status_and_output(self)
+        # Note that this *must not* call wait_on_status_and_output. There might
+        # be un-signaled grandchild processes holding the output pipe, and we
+        # can't expect them to exit promptly. We only want to reap our
+        # immediate zombie children here. See gotchas.md for an extensive
+        # discussion of why we can't do better.
+        wait_on_status(self, True)
 
 
 # This function handle waiting and collecting output, but does not raise status
@@ -952,7 +957,7 @@ def start_input_thread(input_reader, writer_thread_cell):
             except PIPE_CLOSED_ERROR:
                 pass
 
-    thread = ThreadWithReturn(write_thread)
+    thread = DaemonicThread(write_thread)
     writer_thread_cell[0] = thread
     thread.start()
     with read:
@@ -991,7 +996,7 @@ class OutputCaptureContext:
             with self._read_pipe:
                 return self._read_pipe.read()
 
-        self._thread = ThreadWithReturn(read_fn)
+        self._thread = DaemonicThread(read_fn)
         self._thread.start()
 
     def join_thread_if_needed(self):
@@ -1019,13 +1024,16 @@ def stringify_with_dot_if_path(x):
     return x
 
 
-# The standard Thread class doesn't give us any way to access the return value
-# of the target function, or to see any exceptions that might've gotten thrown.
-# This is a thin wrapper around Thread that enhances the join function to
-# return values and reraise exceptions.
-class ThreadWithReturn(threading.Thread):
+# A thread that sets the daemon flag to true, so that it doesn't block process
+# exit. This also includes several other conveniences:
+# - It takes a target function argument in its constructor, so that you don't
+#   have to subclass it every time you use it.
+# - The return value from join() is whatever the target function returned.
+# - join() re-raises any exceptions from the target function.
+class DaemonicThread(threading.Thread):
     def __init__(self, target, args=(), kwargs=None, **thread_kwargs):
         threading.Thread.__init__(self, **thread_kwargs)
+        self.daemon = True
         self._target = target
         self._args = args
         self._kwargs = kwargs or {}

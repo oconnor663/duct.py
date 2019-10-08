@@ -49,8 +49,8 @@ this problem.
 
 Many languages (Python, Rust, Go) provide a `kill` API that sends `SIGKILL` to
 a child process on Unix or calls `TerminateProcess` on Windows. The caller has
-to remember to `wait` on the child afterwards, or it turns into a zombie and
-leaks resources. Duct performs the `wait` by default instead.
+to remember to wait on the child afterwards, or it turns into a zombie and
+leaks resources. Duct waits by default instead.
 
 `SIGKILL` cannot be caught or ignored, and so waiting will almost always return
 quickly. One of the rare exceptions to this is if the child is stuck in an
@@ -63,6 +63,27 @@ filesystem. In general, Duct's correctness priorities are:
 3. Do not let errors pass silently.
 
 In this case #1 takes priority over #2.
+
+However, one important subtlety here is that we can only kill child processes
+that we spawned. We can't kill grandchild processes that our children spawned.
+(See the entire [Killing grandchild processes?](#killing-grandchild-processes)
+section for more on this.) Those grandchild processes might inherit any output
+pipes that we gave to the child. And that means that even though we do expect
+the child to exit promptly in non-pathological cases, we _can't_ expect a read
+of the child's stdout pipe to return EOF promptly. Unkilled grandchildren might
+keep it open. So the automatic wait performed as part of `kill` must not also
+wait on IO threads to finish. It must only reap zombie children.
+
+A lucky break for us here is that, as long as we reap our zombie children, most
+other cleanup is automatic. There's no such thing as "zombie threads" when
+you're using most standard libraries. (Rust detaches threads in the
+[`std::thread::JoinHandle`](https://doc.rust-lang.org/std/thread/struct.JoinHandle.html)
+destructor, and Python detaches threads as soon as they're spawned.) So we can
+leave IO threads running until any pipe-holding grandchildren exit naturally.
+And the OS automatically reaps zombie grandchildren if their parent has exited.
+The only active step we need to take is to set the "daemon" flag on IO threads
+in Python, so that they don't block the parent process from exiting. (Rust
+threads never block exit.)
 
 ## Making `kill` thread-safe
 
@@ -210,7 +231,7 @@ For this reason, the `start` method must use threads to supply input and
 capture output. That guarantees that the parent will never cause its children
 to block, regardless of its order of operations after `start`.
 
-## Killing grandchildren processes?
+## Killing grandchild processes?
 
 **Currently unsolved.** This is something of a disaster area in Unix process
 management. Consider the following two scripts. Here's `test1.py`:
