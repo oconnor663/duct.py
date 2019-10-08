@@ -12,6 +12,20 @@ portable to other languages. Duct's behavior is generally identical across
 languages, but this document comments on cases where language differences
 affect the implementation.
 
+## Contents
+
+* [Reporting errors by default](#reporting-errors-by-default)
+* [Catching pipe errors when writing to standard input](#catching-pipe-errors-when-writing-to-standard-input)
+* [Waiting on killed children by default](#waiting-on-killed-children-by-default)
+* [Making `kill` thread-safe](#making-kill-thread-safe)
+* [Adding `./` to program names given as relative paths](#adding--to-program-names-given-as-relative-paths)
+* [Preventing `dir` from affecting relative program paths on Unix](#preventing-dir-from-affecting-relative-program-paths-on-unix)
+* [Preventing pipe inheritance races on Windows](#preventing-pipe-inheritance-races-on-windows)
+* [Matching platform case-sensitivity for environment variables](#matching-platform-case-sensitivity-for-environment-variables)
+* [Cleaning up partially started pipelines](#cleaning-up-partially-started-pipelines)
+* [Using IO threads to avoid blocking children](#using-io-threads-to-avoid-blocking-children)
+* [Killing grandchild processes?](#killing-grandchild-processes)
+
 ## Reporting errors by default
 
 Most programming languages make error checking the default, either by crashing
@@ -69,14 +83,14 @@ that we spawned. We can't kill grandchild processes that our children spawned.
 (See the entire [Killing grandchild processes?](#killing-grandchild-processes)
 section for more on this.) Those grandchild processes might inherit any output
 pipes that we gave to the child. And that means that even though we do expect
-the child to exit promptly in non-pathological cases, we _can't_ expect a read
-of the child's stdout pipe to return EOF promptly. Unkilled grandchildren might
-keep it open. So the automatic wait performed as part of `kill` must not also
-wait on IO threads to finish. It must only reap zombie children.
+the child to exit promptly in non-pathological cases, we can't expect a read of
+the child's stdout pipe to return EOF promptly. Unkilled grandchildren might
+keep it open. So the automatic wait performed by `kill` must _not_ wait on IO
+threads to finish. It must only reap zombie children.
 
-A lucky break for us here is that, as long as we reap our zombie children, most
-other cleanup is automatic. There's no such thing as "zombie threads" when
-you're using most standard libraries. (Rust detaches threads in the
+A lucky break for us here is that, as long as we reap our own zombie children,
+most other cleanup is automatic. Most standard libraries take care of "zombie
+threads" for us. (Rust detaches threads in the
 [`std::thread::JoinHandle`](https://doc.rust-lang.org/std/thread/struct.JoinHandle.html)
 destructor, and Python detaches threads as soon as they're spawned.) So we can
 leave IO threads running until any pipe-holding grandchildren exit naturally.
