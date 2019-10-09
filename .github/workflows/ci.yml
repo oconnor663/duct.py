@@ -23,3 +23,5 @@ jobs:
       run: python ci.py
     - name: Coveralls upload
       run: coveralls
+      env:
+        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
