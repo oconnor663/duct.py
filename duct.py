@@ -948,14 +948,17 @@ def start_input_thread(input_reader, writer_thread_cell):
     read, write = open_pipe()
 
     def write_thread():
-        with write:
-            # If the write blocks on a full pipe buffer (default 64 KB on
-            # Linux), and then the program on the other end quits before
-            # reading everything, the write will throw. Catch this error.
-            try:
+        # If the write blocks on a full pipe buffer (default 64 KB on Linux),
+        # and then the program on the other end quits before reading
+        # everything, the write will throw. Catch this error.
+        #
+        # Note that on macOS, *both* write *and* close can raise a
+        # BrokenPipeError. So we put the try on the outside.
+        try:
+            with write:
                 shutil.copyfileobj(input_reader, write)
-            except PIPE_CLOSED_ERROR:
-                pass
+        except PIPE_CLOSED_ERROR:
+            pass
 
     thread = DaemonicThread(write_thread)
     writer_thread_cell[0] = thread

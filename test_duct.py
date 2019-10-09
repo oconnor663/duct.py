@@ -191,7 +191,7 @@ def test_pipe_SIGPIPE():
             pass
         ''')
     zeroes = cmd('python', '-c', zeroes_code)
-    out = zeroes.pipe(head_bytes(5)).read()
+    out = zeroes.unchecked().pipe(head_bytes(5)).read()
     assert "00000" == out
 
 
