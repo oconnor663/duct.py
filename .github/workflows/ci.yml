@@ -22,8 +22,25 @@ jobs:
     - name: ci.py
       run: python ci.py
     - name: Coveralls upload
-      run: coveralls
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         COVERALLS_SERVICE_NAME: GitHub
         COVERALLS_PARALLEL: "true"
+        TRAVIS_JOB_ID: ${{ github.ref }}:${{ github.sha }}
+      run: |
+        echo TRAVIS_JOB_ID=$TRAVIS_JOB_ID
+        coveralls
+
+  # https://docs.coveralls.io/parallel-build-webhook
+  coveralls_finish:
+    name: Coveralls finished webhook
+    needs: ["test"]
+    runs-on: ubuntu-latest
+    env:
+      COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+      COVERALLS_SERVICE_NAME: GitHub
+      COVERALLS_PARALLEL: "true"
+      TRAVIS_JOB_ID: ${{ github.ref }}:${{ github.sha }}
+    run: |
+      echo TRAVIS_JOB_ID=$TRAVIS_JOB_ID
+      curl -k "https://coveralls.io/webhook?repo_token=$COVERALLS_REPO_TOKEN" -d "payload[job_id]=$TRAVIS_JOB_ID&payload[status]=done"
