@@ -398,8 +398,8 @@ class Expression:
     def dir(self, path):
         r"""Set the working directory for the expression.
 
-        >>> cmd("pwd").dir("/tmp").read()
-        '/tmp'
+        >>> cmd("pwd").dir("/").read()
+        '/'
 
         Note that :func:`dir` does *not* affect the meaning of relative exe
         paths.  For example in the expression ``cmd("./foo.sh").dir("bar")``,
