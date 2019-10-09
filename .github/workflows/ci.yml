@@ -29,3 +29,7 @@ jobs:
         pip install pytest
         pytest
         flake8
+    - name: Coveralls
+      uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.github_token }}
