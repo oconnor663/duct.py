@@ -15,6 +15,10 @@ are handled for you the Right Way™.
 Changelog
 ---------
 
+- v0.6.1
+  - Added `ReaderHandle.kill`.
+  - Kill methods no longer wait on IO threads to complete. This avoids
+    blocking on unkilled grandchildren.
 - v0.6.0
   - Removed the `sh` function.
   - Removed the `then` method.
