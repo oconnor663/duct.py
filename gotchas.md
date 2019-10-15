@@ -32,7 +32,7 @@ Most programming languages make error checking the default, either by crashing
 your program with an exception, or by emitting warnings or compiler errors for
 unchecked results. But the child process APIs in most standard libraries
 (including Python and Rust) do the opposite, ignoring non-zero exit statuses by
-default. That's unforunate, because most command line utilities helpfully
+default. That's unfortunate, because most command line utilities helpfully
 distinguish between success and failure in their exit status. For example, if
 you give the wrong path to a `tar` command:
 
