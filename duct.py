@@ -1324,6 +1324,25 @@ class ReaderHandle(io.IOBase):
             self._read_pipe.close()
             self._read_pipe = None
 
+    def try_wait(self):
+        r"""Check whether the child process(es) have finished, and if so return
+        an :class:`Output` containing the exit status and any captured output.
+        This is equivalent to :func:`Handle.try_wait`.
+
+        Note that the ``stdout`` field of the returned :class:`Output` will
+        always be ``None``, because the :class:`ReaderHandle` itself owns the
+        child's stdout pipe.
+
+        >>> input_bytes = bytes([42]) * 1000000
+        >>> reader = cmd("cat").stdin_bytes(input_bytes).reader()
+        >>> with reader:
+        ...     assert reader.try_wait() is None
+        ...     output_bytes = reader.read()
+        ...     assert reader.try_wait() is not None
+        ...     assert input_bytes == output_bytes
+        """
+        return self._handle.try_wait()
+
     def kill(self):
         r"""Call :func:`kill` on the inner :class:`Handle`.
 
