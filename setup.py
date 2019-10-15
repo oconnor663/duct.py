@@ -9,6 +9,6 @@ setuptools.setup(
     url='https://github.com/oconnor663/duct.py',
     author="Jack O'Connor",
     author_email='oconnor663@gmail.com',
-    version='0.6.1',
+    version='0.6.2',
     py_modules=['duct'],
 )
