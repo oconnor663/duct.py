@@ -319,10 +319,11 @@ sending SIGCONT to unrelated processes) or something called "the freezer",
 though if Systemd doesn't attempt to use those techniques that's a pretty bad
 sign.
 
-Linux has umpteen different reasons to add some notion of "process handles",
-but it hasn't happened yet, and I don't see any solid evidence that it's going
-to happen. Windows seems to have a cleaner solution for all of this ([job
+Linux is in the middle of adding new APIs like
+[`pidfd_send_signal`](https://lwn.net/Articles/794707/), but none of them are
+aimed at improving the situation with grandchildren. Windows has a cleaner
+solution ([job
 objects](https://docs.microsoft.com/en-us/windows/win32/procthread/job-objects)),
-though even there it sounds like some important features aren't supported on
+but even there it sounds like some important features aren't supported on
 Windows 7. Realistically, there won't be good techniques for Duct to use to
 solve this problem for many years.
