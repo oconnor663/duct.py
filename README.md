@@ -22,6 +22,7 @@ Changelog
   - Kill methods no longer wait on IO threads to complete. This avoids
     blocking on unkilled grandchildren.
 - v0.6.0
+  - The `kill` method now reaps killed child processes before returning.
   - Removed the `sh` function.
   - Removed the `then` method.
   - Added `Handle.kill`.
