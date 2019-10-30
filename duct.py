@@ -777,6 +777,13 @@ class Handle:
         # discussion of why we can't do better.
         wait_on_status(self, True)
 
+    def pids(self):
+        r"""Return the PIDs of all the running child processes. The order of
+        the PIDs in the returned list is the same as the pipeline order, from
+        left to right.
+        """
+        return pids(self)
+
 
 # This function handle waiting and collecting output, but does not raise status
 # errors for non-zero exit statuses.
@@ -848,6 +855,17 @@ def kill(handle):
         kill(right)
     else:
         kill(handle._inner)
+
+
+def pids(handle):
+    if handle._type == CMD:
+        shared_child = handle._payload
+        return [shared_child.pid()]
+    elif handle._type == PIPE:
+        left, right = handle._payload
+        return pids(left) + pids(right)
+    else:
+        return pids(handle._inner)
 
 
 def repr_expression(expression):
@@ -1249,6 +1267,9 @@ class SharedChild:
             if self._status is None:
                 self._child.kill()
 
+    def pid(self):
+        return self._child.pid
+
 
 class ReaderHandle(io.IOBase):
     r"""A stdout reader that automatically closes its read pipe and awaits
@@ -1359,3 +1380,10 @@ class ReaderHandle(io.IOBase):
         b''
         """  # noqa: E501
         self._handle.kill()
+
+    def pids(self):
+        r"""Return the PIDs of all the running child processes. The order of
+        the PIDs in the returned list is the same as the pipeline order, from
+        left to right.
+        """
+        return self._handle.pids()

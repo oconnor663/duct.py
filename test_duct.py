@@ -668,3 +668,27 @@ p.wait()
     # Incidentally this also implicitly tests that background threads are
     # daemonic, like test_DaemonicThread_reraises_exceptions does. Otherwise
     # the test suite will block on exit.
+
+
+def test_pids():
+    handle = echo_cmd("hi").start()
+    assert len(handle.pids()) == 1
+    assert type(handle.pids()[0]) is int
+    handle.wait()
+
+    reader = echo_cmd("hi").reader()
+    assert len(reader.pids()) == 1
+    assert type(reader.pids()[0]) is int
+    reader.read()
+
+    handle = echo_cmd("hi").pipe(cat_cmd()).start()
+    assert len(handle.pids()) == 2
+    assert type(handle.pids()[0]) is int
+    assert type(handle.pids()[1]) is int
+    handle.wait()
+
+    reader = echo_cmd("hi").pipe(cat_cmd()).reader()
+    assert len(reader.pids()) == 2
+    assert type(reader.pids()[0]) is int
+    assert type(reader.pids()[1]) is int
+    reader.read()
