@@ -15,6 +15,8 @@ are handled for you the Right Way™.
 Changelog
 ---------
 
+- v0.6.3
+  - Added `Handle.pids` and `ReaderHandle.pids`.
 - v0.6.2
   - Added `ReaderHandle.try_wait`.
 - v0.6.1
