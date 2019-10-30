@@ -681,14 +681,16 @@ def test_pids():
     assert type(reader.pids()[0]) is int
     reader.read()
 
-    handle = echo_cmd("hi").pipe(cat_cmd()).start()
-    assert len(handle.pids()) == 2
+    handle = echo_cmd("hi").pipe(cat_cmd().stdout_null().pipe(
+        cat_cmd())).start()
+    assert len(handle.pids()) == 3
     assert type(handle.pids()[0]) is int
     assert type(handle.pids()[1]) is int
     handle.wait()
 
-    reader = echo_cmd("hi").pipe(cat_cmd()).reader()
-    assert len(reader.pids()) == 2
+    reader = echo_cmd("hi").pipe(cat_cmd().stdout_null().pipe(
+        cat_cmd())).reader()
+    assert len(reader.pids()) == 3
     assert type(reader.pids()[0]) is int
     assert type(reader.pids()[1]) is int
     reader.read()
