@@ -157,7 +157,7 @@ Spawning child processes on Windows involves duplicating pipes and making them
 inheritable. Unfortunately, that means that *any* child spawned on other
 threads while those pipes are alive [will inherit
 them](https://web.archive.org/web/20130610174104/https://support.microsoft.com/kb/315939).
-One child might accidentally receives a copy of another child's stdin pipe,
+One child might accidentally receive a copy of another child's stdin pipe,
 preventing the other child from reading EOF and leading to deadlocks. The Rust
 standard library [has an internal
 mutex](https://github.com/rust-lang/rust/blob/1.14.0/src/libstd/sys/windows/process.rs#L169-L179)
