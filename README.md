@@ -12,30 +12,6 @@ are handled for you the Right Way™.
 - [PyPI package](https://pypi.python.org/pypi/duct)
 - [the same library, in Rust](https://github.com/oconnor663/duct.rs)
 
-Changelog
----------
-
-- v0.6.3
-  - Added `Handle.pids` and `ReaderHandle.pids`.
-- v0.6.2
-  - Added `ReaderHandle.try_wait`.
-- v0.6.1
-  - Added `ReaderHandle.kill`.
-  - Kill methods no longer wait on IO threads to complete. This avoids
-    blocking on unkilled grandchildren.
-- v0.6.0
-  - The `kill` method now reaps killed child processes before returning.
-  - Removed the `sh` function.
-  - Removed the `then` method.
-  - Added `Handle.kill`.
-  - Added `ReaderHandle` and `Expression.reader`.
-  - Added `Expression.stdout_stderr_swap`.
-  - Added `Expression.before_spawn`.
-  - Renamed `stdin`/`stdout`/`stderr` to
-    `stdin_path`/`stdout_path`/`stderr_path`.
-  - Renamed `input` to `stdin_bytes`.
-  - This will be the last major release supporting Python 2.
-
 Examples
 --------
 
