@@ -169,10 +169,14 @@ but at least multiple Duct callers on different threads are protected.
 ## Matching platform case-sensitivity for environment variables
 
 Environment variable names are case-sensitive on Unix but case-insensitive on
-Windows. Duct defers to the platform when setting variables. However, methods
-like `env_remove` require keeping an internal map of variables, and map keys
-are always case-sensitive. When managing that map, Duct imitates the platform,
-which means it upper-cases names on Windows.
+Windows, and Duct tries to respect each platform's behavior. Methods like
+`env_remove` require keeping an internal map of variables, and map keys are
+always case-sensitive, so Duct explicitly converts all variable names to
+uppercase on Windows.
+
+Duct makes no guarantees about non-ASCII environment variable names. Their
+behavior is implementation-dependent, platform-dependent, programming
+language-dependent, and probably also human language-dependent.
 
 ## Cleaning up partially started pipelines
 
