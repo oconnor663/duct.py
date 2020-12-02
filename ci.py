@@ -8,6 +8,7 @@ pytest_cmd = [
     "pytest",
     "duct.py",
     "test_duct.py",
+    "--verbose",
     "--cov=duct",
     "--cov-branch",
 ]
