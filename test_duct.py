@@ -716,8 +716,8 @@ def test_kill_after_child_exit():
     pipe_reader, pipe_writer = os.pipe()
     handle = echo_cmd("hi").stdout_file(pipe_writer).start()
     os.close(pipe_writer)
-    reader_file = os.fdopen(pipe_reader)
-    assert reader_file.read() == "hi\n"
+    reader_file = os.fdopen(pipe_reader, "rb")
+    assert reader_file.read() == b"hi" + NEWLINE
 
     # The child has exited. Now just test that kill doesn't crash.
     handle.kill()
