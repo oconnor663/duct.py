@@ -1268,22 +1268,28 @@ class SharedChild:
     def kill(self):
         with self._child_lock:
             if self._child.returncode is None:
-                # Previously we just used Popen.kill here. However, as of Python 3.9,
-                # Popen.send_signal (which is called by Popen.kill) calls Popen.poll first, as a
-                # best-effort check for the same PID race that this class is designed around. That
-                # means that if the child has already exited, Popen.kill will reap it. Now that we
-                # check Popen.returncode throughout this class (as of the same commit that adds this
-                # comment), we'll see the non-None exit status there as a side effect if reaping has
-                # happened. That *might* mean we could still call Popen.kill here safely. However,
-                # there's also the question of how Popen.poll's call to os.waitpid would interact
-                # with our own blocking call to os.waitid from another thread. The worry is that the
-                # waitpid call might take effect first, causing waitid to return a "no child found"
-                # error. I can confirm that happens on Linux when both calls are blocking. Here
-                # though, the waitpid call is non-blocking, which *might* mean it can't happen
-                # first, but that's going to depend on the OS. We could assume that it can happen
-                # and try to catch the error from waitid, but that codepath would be impossible to
-                # test. So what we actually do here is reimplement the documented behavior of
-                # Popen.kill: os.kill(pid, SIGKILL) on Unix, and Popen.terminate on Windows.
+                # Previously we just used Popen.kill here. However, as of
+                # Python 3.9, Popen.send_signal (which is called by Popen.kill)
+                # calls Popen.poll first, as a best-effort check for the same
+                # PID race that this class is designed around. That means that
+                # if the child has already exited, Popen.kill will reap it. Now
+                # that we check Popen.returncode throughout this class (as of
+                # the same commit that adds this comment), we'll see the
+                # non-None exit status there as a side effect if reaping has
+                # happened. That *might* mean we could still call Popen.kill
+                # here safely. However, there's also the question of how
+                # Popen.poll's call to os.waitpid would interact with our own
+                # blocking call to os.waitid from another thread. The worry is
+                # that the waitpid call might take effect first, causing waitid
+                # to return a "no child found" error. I can confirm that
+                # happens on Linux when both calls are blocking. Here though,
+                # the waitpid call is non-blocking, which *might* mean it can't
+                # happen first, but that's going to depend on the OS. We could
+                # assume that it can happen and try to catch the error from
+                # waitid, but that codepath would be impossible to test. So
+                # what we actually do here is reimplement the documented
+                # behavior of Popen.kill: os.kill(pid, SIGKILL) on Unix, and
+                # Popen.terminate on Windows.
                 if is_windows():
                     self._child.terminate()
                 else:
