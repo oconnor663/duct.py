@@ -116,6 +116,12 @@ so that its PID isn't freed for reuse. That gives the waiting thread a chance
 to set a flag to block further kills, before reaping the child. Duct uses this
 approach on Unix-like platforms. Windows doesn't have this problem.
 
+A recent update here: As part of a best-effort check for this bug, Python 3.9
+[changed the behavior](https://bugs.python.org/issue38630) of `Popen.kill` to
+reap child processes that have already exited. This [interacts
+poorly](https://github.com/oconnor663/duct.py/commit/5dfae70cc9481051c5e53da0c48d9efa8ff71507)
+with code that calls `os.waitid` or `os.waitpid` directly.
+
 ## Adding `./` to program names given as relative paths
 
 When you run the command `foo`, it can be ambiguous whether you mean `./foo` in
