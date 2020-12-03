@@ -56,6 +56,7 @@ from contextlib import contextmanager
 import io
 import os
 import shutil
+import signal
 import subprocess
 import threading
 
@@ -1118,6 +1119,10 @@ def maybe_canonicalize_exe_path(exe_name, iocontext):
 popen_lock = threading.Lock()
 
 
+def is_windows():
+    return os.name == "nt"
+
+
 # This wrapper works around two major deadlock issues to do with pipes. The
 # first is that, before Python 3.2 on POSIX systems, os.pipe() creates
 # inheritable file descriptors, which leak to all child processes and prevent
@@ -1139,7 +1144,7 @@ popen_lock = threading.Lock()
 # subprocess.Popen. That type works around another race condition to do with
 # signaling children.
 def safe_popen(*args, **kwargs):
-    close_fds = (os.name != 'nt')
+    close_fds = not is_windows()
     with popen_lock:
         return SharedChild(*args, close_fds=close_fds, **kwargs)
 
@@ -1164,7 +1169,7 @@ def encode_with_universal_newlines(s):
 # removals in that copy won't interact properly with the inherited parent
 # environment.
 def convert_env_var_name(var):
-    if os.name == 'nt':
+    if is_windows():
         return var.upper()
     return var
 
@@ -1194,26 +1199,24 @@ def convert_env_var_name(var):
 class SharedChild:
     def __init__(self, *args, **kwargs):
         self._child = subprocess.Popen(*args, **kwargs)
-        self._status = None
-        # The status lock is only held long enough to read or write the status,
-        # or to make non-blocking calls like Popen.poll(). Threads making a
-        # blocking call to os.waitid() release the status lock first. This
+        # The child lock is only held for non-blocking calls. Threads making a
+        # blocking call to os.waitid() release the child lock first. This
         # ensures that one thread can call try_wait() while another thread is
         # blocked on wait().
-        self._status_lock = threading.Lock()
+        self._child_lock = threading.Lock()
         self._wait_lock = threading.Lock()
 
     def wait(self):
         with self._wait_lock:
             # See if another thread already waited. If so, return the status we
-            # got before. If not, immediately release the status lock, and move
+            # got before. If not, immediately release the child lock, and move
             # on to call wait ourselves.
-            with self._status_lock:
-                if self._status is not None:
-                    return self._status
+            with self._child_lock:
+                if self._child.returncode is not None:
+                    return self._child.returncode
 
             # No other thread has waited, we're holding the wait lock, and
-            # we've released the status lock. It's now our job to wait. As
+            # we've released the child lock. It's now our job to wait. As
             # documented above, if os.waitid is defined, use that function to
             # await the child without reaping it. Otherwise we do an ordinary
             # Popen.wait and accept the race condition on some platforms.
@@ -1225,20 +1228,20 @@ class SharedChild:
                 # races with kill(), which is what all of this is about.
                 self._child.wait()
 
-            # Finally, while still holding the wait lock, re-acquire the status
+            # Finally, while still holding the wait lock, re-acquire the child
             # lock to reap the child and write the result. Since we know the
             # child has already exited, this won't block. Any other waiting
             # threads that were blocked on us will see our result.
-            with self._status_lock:
+            with self._child_lock:
                 # If the child was already reaped above in the !HAS_WAITID
-                # branch, this will just return the same status again.
-                self._status = self._child.wait()
-                return self._status
+                # branch, this second wait will be a no-op with a cached
+                # returncode.
+                return self._child.wait()
 
     def try_wait(self):
-        with self._status_lock:
-            if self._status is not None:
-                return self._status
+        with self._child_lock:
+            if self._child.returncode is not None:
+                return self._child.returncode
 
             # The child hasn't been waited on yet, so we need to do a
             # non-blocking check to see if it's still running. The Popen type
@@ -1256,16 +1259,35 @@ class SharedChild:
 
         # If either of the poll approaches above returned non-None, do a full
         # wait to reap the child, which will not block. Note that we've
-        # released the status lock here, because wait() will re-acquire it.
+        # released the child lock here, because wait() will re-acquire it.
         if poll_result is not None:
             return self.wait()
         else:
             return None
 
     def kill(self):
-        with self._status_lock:
-            if self._status is None:
-                self._child.kill()
+        with self._child_lock:
+            if self._child.returncode is None:
+                # Previously we just used Popen.kill here. However, as of Python 3.9,
+                # Popen.send_signal (which is called by Popen.kill) calls Popen.poll first, as a
+                # best-effort check for the same PID race that this class is designed around. That
+                # means that if the child has already exited, Popen.kill will reap it. Now that we
+                # check Popen.returncode throughout this class (as of the same commit that adds this
+                # comment), we'll see the non-None exit status there as a side effect if reaping has
+                # happened. That *might* mean we could still call Popen.kill here safely. However,
+                # there's also the question of how Popen.poll's call to os.waitpid would interact
+                # with our own blocking call to os.waitid from another thread. The worry is that the
+                # waitpid call might take effect first, causing waitid to return a "no child found"
+                # error. I can confirm that happens on Linux when both calls are blocking. Here
+                # though, the waitpid call is non-blocking, which *might* mean it can't happen
+                # first, but that's going to depend on the OS. We could assume that it can happen
+                # and try to catch the error from waitid, but that codepath would be impossible to
+                # test. So what we actually do here is reimplement the documented behavior of
+                # Popen.kill: os.kill(pid, SIGKILL) on Unix, and Popen.terminate on Windows.
+                if is_windows():
+                    self._child.terminate()
+                else:
+                    os.kill(self._child.pid, signal.SIGKILL)
 
     def pid(self):
         return self._child.pid

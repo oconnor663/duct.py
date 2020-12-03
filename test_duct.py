@@ -694,3 +694,30 @@ def test_pids():
     assert type(reader.pids()[0]) is int
     assert type(reader.pids()[1]) is int
     reader.read()
+
+
+# This test was added after the release of Python 3.9, which included a
+# behavior change that caused a crash in this case. There wasn't previously a
+# explicit test for this, but I got lucky and one of the doctests hit it.
+# (Example run: https://github.com/oconnor663/duct.py/runs/1488376578)
+#
+# The behavior change in Python 3.9 is that Popen.send_signal (which is called
+# by Popen.kill, which we call in SharedChild.kill) now calls Popen.poll first,
+# as a best-effort check to make sure the child's PID hasn't already been freed
+# for reuse. If the child has not yet exited, this is effectively no different
+# from before. However, if the child has exited, this may reap the child, which
+# was not previously possible. This test guarantees that the child has exited
+# before kill, and then makes sure kill doesn't crash.
+def test_kill_after_child_exit():
+    # Create a child process and wait for it to exit, without actually waiting
+    # on it and reaping it, by reading its output. We can't use the .read()
+    # method for this, because that would actually wait on it and reap it, so
+    # we create our own pipe manually.
+    pipe_reader, pipe_writer = os.pipe()
+    handle = echo_cmd("hi").stdout_file(pipe_writer).start()
+    os.close(pipe_writer)
+    reader_file = os.fdopen(pipe_reader)
+    assert reader_file.read() == "hi\n"
+
+    # The child has exited. Now just test that kill doesn't crash.
+    handle.kill()
