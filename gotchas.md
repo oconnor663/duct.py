@@ -1,5 +1,7 @@
 # Gotchas, bugs, and platform inconsistencies
 
+> In loving memory of Prof. Stan Eisenstat and his legendary course, CS 323.
+
 This document describes the colorful variety of issues that come up when you
 use child processes, and the solutions that Duct chooses for them. It's
 intended for users who want to understand Duct's behavior better, and also for
