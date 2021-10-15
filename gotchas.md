@@ -255,7 +255,7 @@ would be a deadlock, and it would probably be difficult to reproduce and debug.
 
 For this reason, the `start` method must use threads to supply input and
 capture output. That guarantees that the parent will never cause its children
-to block, regardless of its order of operations after `start`.
+to block on output, regardless of its order of operations after `start`.
 
 ## Killing grandchild processes?
 
