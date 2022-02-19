@@ -144,6 +144,11 @@ This solves two problems:
   "command not found", from instead matching a program in the `%PATH%` on
   Windows.
 
+A recent update here: Rust 1.58 [changed the
+behavior](https://blog.rust-lang.org/2022/01/13/Rust-1.58.0.html#reduced-windows-command-search-path)
+of `std::process::Command` to exclude the current directory from the search
+path on Windows.
+
 ## Preventing `dir` from affecting relative program paths on Unix
 
 Windows and Unix take different approaches to setting a child's working
