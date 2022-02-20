@@ -1399,7 +1399,8 @@ class ReaderHandle(io.IOBase):
         calls to :func:`read` are likely to raise :class:`StatusError` if you
         didn't use :func:`Expression.unchecked`.
 
-        >>> reader = cmd("bash", "-c", "echo hi && sleep 1000000").unchecked().reader()
+        >>> child_code = "import sys, time; print('hi'); sys.stdout.flush(); time.sleep(1000000)"
+        >>> reader = cmd("python", "-c", child_code).unchecked().reader()
         >>> with reader:
         ...     reader.read(3)
         ...     reader.kill()
