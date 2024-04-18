@@ -152,7 +152,7 @@ path on Windows.
 ## Preventing `dir` from affecting relative program paths on Unix
 
 Windows and Unix take different approaches to setting a child's working
-directory. The `CreateProcess` function on Windows has an explict
+directory. The `CreateProcess` function on Windows has an explicit
 `lpCurrentDirectory` argument, while most Unix platforms call `chdir` in
 between `fork` and `exec`. Unfortunately, those two approaches give different
 results when you have a _relative path_ to the child executable. On Windows the
@@ -231,7 +231,7 @@ already needs to think about failure handling and data corruption.
 When input bytes are supplied or output bytes are captured, Duct's `start`
 method uses background threads to do IO, so that IO makes progress even if
 `wait` is never called. Duct's `reader` method doesn't use a thread for
-standard ouput, since that's left to the caller, but it still uses background
+standard output, since that's left to the caller, but it still uses background
 threads to supply input bytes or to capture standard error.
 
 Consider the following scenario. You want to spawn two child processes, which
@@ -285,7 +285,7 @@ p.wait()
 
 That is, `test1.py` starts a `sleep` child process and then waits on it. And
 `test2.py` starts `test1.py`, waits for a second, and then kills it. The
-question is, if you run `test2.py`, what happpens to the `sleep` process? If
+question is, if you run `test2.py`, what happens to the `sleep` process? If
 you look at something like `pgrep sleep` after `test2.py` exits, you'll see
 that `sleep` is _still running_. Maybe that's not entirely surprising, since we
 only killed `test1.py` and didn't explicitly kill `sleep`. But compare that to
