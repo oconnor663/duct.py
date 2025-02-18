@@ -1,4 +1,4 @@
-# duct.py [![Actions Status](https://github.com/oconnor663/duct.py/workflows/tests/badge.svg)](https://github.com/oconnor663/duct.py/actions) [![Coverage Status](https://coveralls.io/repos/oconnor663/duct.py/badge.svg?branch=master&service=github)](https://coveralls.io/github/oconnor663/duct.py?branch=master) [![PyPI version](https://badge.fury.io/py/duct.svg)](https://pypi.python.org/pypi/duct) [![Documentation Status](https://readthedocs.org/projects/ductpy/badge/?version=latest)](https://ductpy.readthedocs.io/en/latest/?badge=latest)
+# duct.py [![Actions Status](https://github.com/oconnor663/duct.py/workflows/tests/badge.svg)](https://github.com/oconnor663/duct.py/actions) [![PyPI version](https://badge.fury.io/py/duct.svg)](https://pypi.python.org/pypi/duct) [![Documentation Status](https://readthedocs.org/projects/ductpy/badge/?version=latest)](https://ductpy.readthedocs.io/en/latest/?badge=latest)
 
 Duct is a library for running child processes. Duct makes it easy to
 build pipelines and redirect IO like a shell. At the same time, Duct

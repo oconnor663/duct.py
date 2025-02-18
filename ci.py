@@ -9,8 +9,6 @@ pytest_cmd = [
     "duct.py",
     "test_duct.py",
     "--verbose",
-    "--cov=duct",
-    "--cov-branch",
 ]
 
 # Doctests are only compatible with Python 3 and non-Windows.
