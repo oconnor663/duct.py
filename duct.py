@@ -151,6 +151,7 @@ class Expression:
     environment. Execute expressions with :func:`run`, :func:`read`,
     :func:`start`, or :func:`reader`.
     """
+
     def __init__(self, _type, inner, payload=None):
         self._type = _type
         self._inner = inner
@@ -181,7 +182,7 @@ class Expression:
         """
         stdout_bytes = self.reader().read()
         stdout_str = decode_with_universal_newlines(stdout_bytes)
-        return stdout_str.rstrip('\n')
+        return stdout_str.rstrip("\n")
 
     def start(self):
         r"""Start executing the expression and return a :class:`Handle`.
@@ -518,14 +519,19 @@ def start_expression(expression, context):
         handle_payload_cell[0] = start_pipe(context, left_expr, right_expr)
     else:
         # IO redirect expressions
-        with modify_context(expression, context,
-                            handle_payload_cell) as modified_context:
-            handle_inner = start_expression(expression._inner,
-                                            modified_context)
+        with modify_context(
+            expression, context, handle_payload_cell
+        ) as modified_context:
+            handle_inner = start_expression(expression._inner, modified_context)
 
-    return Handle(expression._type, handle_inner, handle_payload_cell[0],
-                  str(expression), context.stdout_capture_context,
-                  context.stderr_capture_context)
+    return Handle(
+        expression._type,
+        handle_inner,
+        handle_payload_cell[0],
+        str(expression),
+        context.stdout_capture_context,
+        context.stderr_capture_context,
+    )
 
 
 def start_cmd(context, prog, args):
@@ -609,8 +615,7 @@ def modify_context(expression, context, payload_cell):
             yield context._replace(stdout=f)
 
     elif expression._type == STDOUT_CAPTURE:
-        yield context._replace(
-            stdout=context.stdout_capture_context.get_write_pipe())
+        yield context._replace(stdout=context.stdout_capture_context.get_write_pipe())
 
     elif expression._type == STDOUT_TO_STDERR:
         yield context._replace(stdout=context.stderr)
@@ -627,8 +632,7 @@ def modify_context(expression, context, payload_cell):
             yield context._replace(stderr=f)
 
     elif expression._type == STDERR_CAPTURE:
-        yield context._replace(
-            stderr=context.stderr_capture_context.get_write_pipe())
+        yield context._replace(stderr=context.stderr_capture_context.get_write_pipe())
 
     elif expression._type == STDERR_TO_STDOUT:
         yield context._replace(stderr=context.stdout)
@@ -673,7 +677,7 @@ def modify_context(expression, context, payload_cell):
         raise NotImplementedError  # pragma: no cover
 
 
-class Output(namedtuple('Output', ['status', 'stdout', 'stderr'])):
+class Output(namedtuple("Output", ["status", "stdout", "stderr"])):
     r"""The return type of :func:`Expression.run` and :func:`Handle.wait`. It
     carries the pubic fields ``status``, ``stdout``, and ``stderr``. If
     :func:`Expression.stdout_capture` and :func:`Expression:stderr_capture`
@@ -682,6 +686,7 @@ class Output(namedtuple('Output', ['status', 'stdout', 'stderr'])):
     >>> cmd("bash", "-c", "echo hi 1>&2").stderr_capture().run()
     Output(status=0, stdout=None, stderr=b'hi\n')
     """
+
     __slots__ = ()
 
 
@@ -697,13 +702,15 @@ class StatusError(subprocess.CalledProcessError):
     ...     e.output
     Output(status=1, stdout=None, stderr=b'hi\n')
     """
+
     def __init__(self, output, expression_str):
         self.output = output
         self._expression_str = expression_str
 
     def __str__(self):
-        return 'Expression {0} returned non-zero exit status: {1}'.format(
-            self._expression_str, self.output)
+        return "Expression {0} returned non-zero exit status: {1}".format(
+            self._expression_str, self.output
+        )
 
 
 class Handle:
@@ -714,8 +721,16 @@ class Handle:
     the children into zombie processes. In a long-running program, that could
     be serious resource leak.
     """
-    def __init__(self, _type, inner, payload, expression_str,
-                 stdout_capture_context, stderr_capture_context):
+
+    def __init__(
+        self,
+        _type,
+        inner,
+        payload,
+        expression_str,
+        stdout_capture_context,
+        stderr_capture_context,
+    ):
         self._type = _type
         self._inner = inner
         self._payload = payload
@@ -878,8 +893,7 @@ def repr_expression(expression):
         return "cmd({})".format(args_str)
     elif expression._type == PIPE:
         left, right = expression._payload
-        return "{}.pipe({})".format(repr_expression(left),
-                                    repr_expression(right))
+        return "{}.pipe({})".format(repr_expression(left), repr_expression(right))
     else:
         name = NAMES[expression._type]
         inner = repr_expression(expression._inner)
@@ -898,16 +912,19 @@ def repr_expression(expression):
 # .dir(), and .pipe() will create new modified contexts and pass those to their
 # children. The IOContext does *not* own any of the file descriptors it's
 # holding -- it's the caller's responsibility to close those.
-IOContext = namedtuple("IOContext", [
-    "stdin",
-    "stdout",
-    "stderr",
-    "dir",
-    "env",
-    "stdout_capture_context",
-    "stderr_capture_context",
-    "before_spawn_hooks",
-])
+IOContext = namedtuple(
+    "IOContext",
+    [
+        "stdin",
+        "stdout",
+        "stderr",
+        "dir",
+        "env",
+        "stdout_capture_context",
+        "stderr_capture_context",
+        "before_spawn_hooks",
+    ],
+)
 
 
 @contextmanager
@@ -952,7 +969,7 @@ def is_bytes(val):
 
 
 def is_unicode(val):
-    unicode_type = type(u"")
+    unicode_type = type("")
     return isinstance(val, unicode_type)
 
 
@@ -1042,7 +1059,7 @@ def stringify_if_path(x):
 def stringify_with_dot_if_path(x):
     if isinstance(x, PurePath):
         # Note that join does nothing if the path is absolute.
-        return os.path.join('.', str(x))
+        return os.path.join(".", str(x))
     return x
 
 
@@ -1077,7 +1094,7 @@ class DaemonicThread(threading.Thread):
 
 def open_pipe():
     read_fd, write_fd = os.pipe()
-    read_mode, write_mode = ('rb', 'wb')
+    read_mode, write_mode = ("rb", "wb")
     return os.fdopen(read_fd, read_mode), os.fdopen(write_fd, write_mode)
 
 
@@ -1107,8 +1124,9 @@ def open_pipe():
 # have to watch out for instead is local files shadowing global program names,
 # which I don't think we can or should prevent.)
 def maybe_canonicalize_exe_path(exe_name, iocontext):
-    has_sep = (os.path.sep in exe_name
-               or (os.path.altsep is not None and os.path.altsep in exe_name))
+    has_sep = os.path.sep in exe_name or (
+        os.path.altsep is not None and os.path.altsep in exe_name
+    )
 
     if has_sep and iocontext.dir is not None and not os.path.isabs(exe_name):
         return os.path.realpath(exe_name)
@@ -1154,11 +1172,11 @@ def safe_popen(*args, **kwargs):
 # around the mode all over the place, and from having decoding exceptions
 # thrown on reader threads.
 def decode_with_universal_newlines(b):
-    return b.decode('utf8').replace('\r\n', '\n').replace('\r', '\n')
+    return b.decode("utf8").replace("\r\n", "\n").replace("\r", "\n")
 
 
 def encode_with_universal_newlines(s):
-    return s.replace('\n', os.linesep).encode('utf8')
+    return s.replace("\n", os.linesep).encode("utf8")
 
 
 # Environment variables are case-insensitive on Windows. To deal with that,
@@ -1252,8 +1270,9 @@ class SharedChild:
             # available, use that again here, with the WNOHANG flag. Otherwise
             # just use poll() and rely on Python's internal synchronization.
             if HAS_WAITID:
-                poll_result = os.waitid(os.P_PID, self._child.pid,
-                                        os.WEXITED | os.WNOWAIT | os.WNOHANG)
+                poll_result = os.waitid(
+                    os.P_PID, self._child.pid, os.WEXITED | os.WNOWAIT | os.WNOHANG
+                )
             else:
                 poll_result = self._child.poll()
 
@@ -1318,6 +1337,7 @@ class ReaderHandle(io.IOBase):
     which turns into an exception for the reader by default, unless you use
     :func:`Expression.unchecked`.
     """
+
     def __init__(self, handle, read_pipe):
         self._handle = handle
         self._read_pipe = read_pipe
