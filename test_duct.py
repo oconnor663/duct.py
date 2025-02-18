@@ -270,9 +270,11 @@ def test_env_remove():
 
 
 def test_full_env():
-    # Wrap echo to preserve the SYSTEMROOT variable on Windows. Without this,
-    # basic Python features like `import os` will fail.
-    clear_env = {"foo": "bar"}
+    # Wrap echo to preserve PATH and, on Windows, SYSTEMROOT. Without the
+    # latter, basic Python features like `import os` will fail. We originally
+    # didn't need PATH, but at some point prior to between 2022 and 2025 macOS
+    # tests started failing without it.
+    clear_env = {"foo": "bar", "PATH": os.environ["PATH"]}
     if os.name == "nt":
         clear_env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
     assert "bar" == echo_var("foo").full_env(clear_env).read()
