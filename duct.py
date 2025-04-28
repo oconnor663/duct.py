@@ -1382,7 +1382,7 @@ class ReaderHandle(io.IOBase):
         :class:`Handle`.
 
         :class:`ReaderHandle` is a context manager, and if you use it with the
-        `with` keyword, context exit will automatically call :func:`close`.
+        ``with`` keyword, context exit will automatically call :func:`close`.
         Using a ``with`` statement is recommended, for exception safety.
 
         >>> reader = cmd("echo", "hi").reader()
