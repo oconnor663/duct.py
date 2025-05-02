@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 
 from pytest import raises, mark
@@ -764,3 +765,70 @@ def test_kill_after_child_exit():
 
     # The child has exited. Now just test that kill doesn't crash.
     handle.kill()
+
+
+# This is ported from test_wait_try_wait_race in shared_child.rs:
+# https://github.com/oconnor663/shared_child.rs/blob/0c1910c83c15fc12444261844f663bd3f162df28/src/lib.rs#L531
+def test_wait_poll_race():
+    # Make sure that .wait() and .poll() can't race against each other. The
+    # scenario we're worried about is:
+    #   1. wait() takes the lock, set the state to Waiting, and releases the lock.
+    #   2. poll() swoops in, takes the lock, sees the Waiting state, and returns Ok(None).
+    #   3. wait() resumes, actually calls waitit(), observes the child has exited, retakes the
+    #      lock, reaps the child, and sets the state to Exited.
+    # A race like this could cause .poll() to report that the child hasn't
+    # exited, even if in fact the child exited long ago. A subsequent call to
+    # .poll() would almost certainly report Ok(Some(_)), but the first call is
+    # still a bug. The way to prevent the bug is by making .wait() do a
+    # non-blocking call to waitid() before releasing the lock.
+    test_duration_secs = 1
+    env_var_name = "RACE_TEST_SECONDS"
+    if env_var_name in os.environ:
+        print(env_var_name, os.environ[env_var_name])
+        test_duration_secs = int(os.environ[env_var_name])
+    test_start = time.time()
+    iterations = 1
+    while True:
+        # Start a child that will exit immediately.
+        child = duct.SharedChild(["python", "-c", ""])
+        # Wait for the child to exit, without updating the SharedChild state.
+        if duct.HAS_WAITID:
+            os.waitid(os.P_PID, child._child.pid, os.WEXITED | os.WNOWAIT)
+        else:
+            # For the platforms where we use os.waitid, we have to be careful
+            # not to reap the child. But for other platforms, we're going to
+            # fall back to Popen.wait anway, so it should be find to do it
+            # here.
+            child._child.wait()
+
+        # Spawn two threads, one to wait() and one to poll(). It should be
+        # impossible for the poll thread to return None at this point. However,
+        # we want to make sure there's no race condition between them, where
+        # the wait() thread has said it's waiting and released the child lock
+        # but hasn't yet actually waited.
+
+        def wait_thread_fn():
+            child.wait()
+
+        wait_thread = threading.Thread(target=wait_thread_fn)
+        wait_thread.start()
+
+        def poll_thread_fn():
+            nonlocal poll_ret
+            poll_ret = child.poll()
+
+        poll_ret = None
+        poll_thread = threading.Thread(target=poll_thread_fn)
+        poll_thread.start()
+        wait_thread.join()
+        poll_thread.join()
+        test_time_so_far = time.time() - test_start
+        assert (
+            poll_ret is not None
+        ), f"encountered the race condition after {test_time_so_far} seconds ({iterations} iterations)"
+        iterations += 1
+
+        # If we've met the target test duration (1 sec by default), exit with
+        # success. Otherwise keep looping and trying to provoke the race.
+        if test_time_so_far >= test_duration_secs:
+            return

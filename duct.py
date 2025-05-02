@@ -1064,9 +1064,7 @@ def stringify_with_dot_if_path(x):
 
 
 # A thread that sets the daemon flag to true, so that it doesn't block process
-# exit. This also includes several other conveniences:
-# - It takes a target function argument in its constructor, so that you don't
-#   have to subclass it every time you use it.
+# exit. This also includes a couple other conveniences:
 # - The return value from join() is whatever the target function returned.
 # - join() re-raises any exceptions from the target function.
 class DaemonicThread(threading.Thread):
@@ -1076,12 +1074,12 @@ class DaemonicThread(threading.Thread):
         self._target = target
         self._args = args
         self._kwargs = kwargs or {}
-        self._return = None
+        self._output = None
         self._exception = None
 
     def run(self):
         try:
-            self._return = self._target(*self._args, **self._kwargs)
+            self._output = self._target(*self._args, **self._kwargs)
         except Exception as e:
             self._exception = e
 
@@ -1089,7 +1087,7 @@ class DaemonicThread(threading.Thread):
         threading.Thread.join(self)
         if self._exception is not None:
             raise self._exception
-        return self._return
+        return self._output
 
 
 def open_pipe():
