@@ -554,7 +554,7 @@ def test_wait():
     assert output.stderr is None
 
 
-def test_try_wait():
+def test_poll():
     handle = (
         echo_err_cmd("error stuff")
         .pipe(echo_cmd("output stuff"))
@@ -564,7 +564,7 @@ def test_try_wait():
     )
     output = None
     while output is None:
-        output = handle.try_wait()
+        output = handle.poll()
     assert output.status == 0
     assert output.stdout == b"output stuff" + NEWLINE
     assert output.stderr == b"error stuff" + NEWLINE
@@ -572,8 +572,8 @@ def test_try_wait():
 
 def test_wait_and_kill():
     handle = sleep_cmd(1000000).pipe(cat_cmd()).env("A", "B").start()
-    assert handle.try_wait() is None
-    assert handle.try_wait() is None
+    assert handle.poll() is None
+    assert handle.poll() is None
     handle.kill()
     # Twice to exercise the already-waited branches.
     handle.kill()

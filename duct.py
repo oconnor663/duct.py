@@ -752,16 +752,16 @@ class Handle:
             raise StatusError(output, self._expression_str)
         return output
 
-    def try_wait(self):
+    def poll(self):
         r"""Check whether the child process(es) have finished, and if so return
         an :class:`Output` containing the exit status and any captured output.
         If the child has exited, this frees the OS resources associated with
         it.
 
         >>> handle = cmd("sleep", "1000").unchecked().start()
-        >>> assert handle.try_wait() is None
+        >>> assert handle.poll() is None
         >>> handle.kill()
-        >>> handle.try_wait()
+        >>> handle.poll()
         Output(status=-9, stdout=None, stderr=None)
         """
         status = wait_on_status(self, False)
@@ -779,7 +779,7 @@ class Handle:
 
         This function does not return an :class:`Output`, and it does not raise
         :class:`StatusError`. However, subsequent calls to :func:`wait` or
-        :func:`try_wait` are likely to raise :class:`StatusError` if you didn't
+        :func:`poll` are likely to raise :class:`StatusError` if you didn't
         use :func:`Expression.unchecked`.
 
         >>> handle = cmd("sleep", "1000").start()
@@ -838,7 +838,7 @@ def wait_child(shared_child, blocking):
     if blocking:
         status = shared_child.wait()
     else:
-        status = shared_child.try_wait()
+        status = shared_child.poll()
     if not blocking and status is None:
         return None
     assert status is not None
@@ -1225,7 +1225,7 @@ class SharedChild:
 
         # This condvar/lock is only held for non-blocking calls. Threads making
         # a blocking call to os.waitid() release the lock first. This ensures
-        # that one thread can call try_wait() or kill() while another thread is
+        # that one thread can call poll() or kill() while another thread is
         # blocked on wait().
         self._condvar = threading.Condition(threading.Lock())
 
@@ -1258,17 +1258,17 @@ class SharedChild:
             #   3. One thread calls .wait(). It acquires the lock, sets
             #      _someone_is_waiting to True, and releases the lock, in
             #      preparation for attempting its blocking wait.
-            #   4. Suddently, another thread swoops in and calls .try_wait().
+            #   4. Suddently, another thread swoops in and calls .poll().
             #      That thread acquires the lock, sees _someone_is_waiting, and
             #      returns None. ***THIS IS A BUG.***
             #   5. The first thread sees that the child has exited, reacquires
             #      the lock, and cleans up.
-            # If the call to .try_wait() were racing against the child's actual
+            # If the call to .poll() were racing against the child's actual
             # exit, then we wouldn't care what it returned. That would be an
             # "honest" race, and it would be correct for the result to be a
             # coin flip. But that's not what happens in this situation. Here
             # the child has definitely exited, maybe seconds or minutes ago,
-            # and a single call to .try_wait() would certainly have returned
+            # and a single call to .poll() would certainly have returned
             # Some. It's only by racing against .wait() that this situation
             # could incorrectly report that the child hasn't exited.
             #
@@ -1322,7 +1322,7 @@ class SharedChild:
             ), "It should be impossible for the child to still be running. We already waited on it."
             return self._child.returncode
 
-    def try_wait(self):
+    def poll(self):
         with self._condvar:
             if self._child.returncode is not None:
                 return self._child.returncode
@@ -1449,10 +1449,10 @@ class ReaderHandle(io.IOBase):
             self._read_pipe.close()
             self._read_pipe = None
 
-    def try_wait(self):
+    def poll(self):
         r"""Check whether the child process(es) have finished, and if so return
         an :class:`Output` containing the exit status and any captured output.
-        This is equivalent to :func:`Handle.try_wait`.
+        This is equivalent to :func:`Handle.poll`.
 
         Note that the ``stdout`` field of the returned :class:`Output` will
         always be ``None``, because the :class:`ReaderHandle` itself owns the
@@ -1461,12 +1461,12 @@ class ReaderHandle(io.IOBase):
         >>> input_bytes = bytes([42]) * 1000000
         >>> reader = cmd("cat").stdin_bytes(input_bytes).reader()
         >>> with reader:
-        ...     assert reader.try_wait() is None
+        ...     assert reader.poll() is None
         ...     output_bytes = reader.read()
-        ...     assert reader.try_wait() is not None
+        ...     assert reader.poll() is not None
         ...     assert input_bytes == output_bytes
         """
-        return self._handle.try_wait()
+        return self._handle.poll()
 
     def kill(self):
         r"""Call :func:`kill` on the inner :class:`Handle`.

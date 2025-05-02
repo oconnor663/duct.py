@@ -74,8 +74,7 @@ uninterruptible system call, for example a `read` of an unresponsive FUSE
 filesystem. In general, Duct's correctness priorities are:
 
 1. Do not leave zombie children or leak other resources.
-2. Do not block in a non-blocking API (`start`, `reader`, `try_wait`, or
-   `kill`).
+2. Do not block in a non-blocking API (`start`, `reader`, `poll`, or `kill`).
 3. Do not let errors pass silently.
 
 In this case #1 takes priority over #2.
