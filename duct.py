@@ -1217,27 +1217,82 @@ def convert_env_var_name(var):
 class SharedChild:
     def __init__(self, *args, **kwargs):
         self._child = subprocess.Popen(*args, **kwargs)
-        # The child lock is only held for non-blocking calls. Threads making a
-        # blocking call to os.waitid() release the child lock first. This
-        # ensures that one thread can call try_wait() while another thread is
+
+        # We never want to reap a child process while another thread is
+        # waiting, because e.g. Linux will return random "child not found"
+        # errors.
+        self._someone_is_waiting = False
+
+        # This condvar/lock is only held for non-blocking calls. Threads making
+        # a blocking call to os.waitid() release the lock first. This ensures
+        # that one thread can call try_wait() or kill() while another thread is
         # blocked on wait().
-        self._child_lock = threading.Lock()
-        self._wait_lock = threading.Lock()
+        self._condvar = threading.Condition(threading.Lock())
 
     def wait(self):
-        with self._wait_lock:
-            # See if another thread already waited. If so, return the status we
-            # got before. If not, immediately release the child lock, and move
-            # on to call wait ourselves.
-            with self._child_lock:
-                if self._child.returncode is not None:
-                    return self._child.returncode
+        # Take the condvar/lock. If we need to do a blocking wait, we'll
+        # release it first.
+        with self._condvar:
+            # As long as another thread is in a blocking wait, sleep on the
+            # condvar. Once we wake from this sleep, it's overwhelmingly likely
+            # that the child will have been reaped, but we'll still check in
+            # case waiting fails somehow.
+            while self._someone_is_waiting:
+                self._condvar.wait()
 
-            # No other thread has waited, we're holding the wait lock, and
-            # we've released the child lock. It's now our job to wait. As
-            # documented above, if os.waitid is defined, use that function to
-            # await the child without reaping it. Otherwise we do an ordinary
-            # Popen.wait and accept the race condition on some platforms.
+            # Check whether the child has already been reaped. (The .poll()
+            # below actually does the same check internally, so we could skip
+            # this, but it feels clearer to me to check it.)
+            if self._child.returncode is not None:
+                return self._child.returncode
+
+            # We have the condvar/lock, and we're the thread responsible for
+            # waiting on the child. We're about to release the lock and do a
+            # blocking, non-reaping wait. However, there's another subtle race
+            # condition we need to worry about, apart from the kill/wait PID
+            # reuse race that this class is all about. Here's a possible order
+            # of events:
+            #   1. The child process exits.
+            #   2. Lots of time passes. Now any waiter will certainly see that
+            #      the child has exited.
+            #   3. One thread calls .wait(). It acquires the lock, sets
+            #      _someone_is_waiting to True, and releases the lock, in
+            #      preparation for attempting its blocking wait.
+            #   4. Suddently, another thread swoops in and calls .try_wait().
+            #      That thread acquires the lock, sees _someone_is_waiting, and
+            #      returns None. ***THIS IS A BUG.***
+            #   5. The first thread sees that the child has exited, reacquires
+            #      the lock, and cleans up.
+            # If the call to .try_wait() were racing against the child's actual
+            # exit, then we wouldn't care what it returned. That would be an
+            # "honest" race, and it would be correct for the result to be a
+            # coin flip. But that's not what happens in this situation. Here
+            # the child has definitely exited, maybe seconds or minutes ago,
+            # and a single call to .try_wait() would certainly have returned
+            # Some. It's only by racing against .wait() that this situation
+            # could incorrectly report that the child hasn't exited.
+            #
+            # To fix this, .wait() must do a non-blocking wait (that is,
+            # actually check the status of the child process) *before*
+            # releasing the lock. If that returns false, then the only possible
+            # race is a race against the child itself, where again it's
+            # expected and fine for the result to be a coin flip.
+            if self._child.poll() is not None:
+                return self._child.returncode
+
+            # Finally, before releasing the condvar/lock, set
+            # _someone_is_waiting. We must unset it before returning, or else
+            # we'll deadlock other callers.
+            self._someone_is_waiting = True
+
+        # Dedent to release the condvar/lock, and do the blocking wait. We have
+        # to catch all exceptions in this critical section.
+        wait_exception = None
+        try:
+            # As documented above, if os.waitid is defined, use that function
+            # to await the child without reaping it. Otherwise we do an
+            # ordinary Popen.wait and accept the race condition on some
+            # platforms.
             if HAS_WAITID:
                 os.waitid(os.P_PID, self._child.pid, os.WEXITED | os.WNOWAIT)
             else:
@@ -1245,47 +1300,48 @@ class SharedChild:
                 # with other calls to wait() or poll(). Unfortunately it still
                 # races with kill(), which is what all of this is about.
                 self._child.wait()
+        except Exception as e:
+            wait_exception = e
 
-            # Finally, while still holding the wait lock, re-acquire the child
-            # lock to reap the child and write the result. Since we know the
-            # child has already exited, this won't block. Any other waiting
-            # threads that were blocked on us will see our result.
-            with self._child_lock:
-                # If the child was already reaped above in the !HAS_WAITID
-                # branch, this second wait will be a no-op with a cached
-                # returncode.
-                return self._child.wait()
+        # No matter what happened above, retake the lock, leave the waiting
+        # state, and signal the condvar. Otherwise other threads might block
+        # forever.
+        with self._condvar:
+            self._someone_is_waiting = False
+            self._condvar.notify_all()
+
+            # Now we're out of the critical section, though we still hold the
+            # lock. In the unlikely case that we caught an exception above,
+            # reraise it. Otherwise, attempt to reap the child. It's ok if
+            # .poll() throws.
+            if wait_exception is not None:
+                raise wait_exception
+            self._child.poll()
+            assert (
+                self._child.returncode is not None
+            ), "It should be impossible for the child to still be running. We already waited on it."
+            return self._child.returncode
 
     def try_wait(self):
-        with self._child_lock:
+        with self._condvar:
             if self._child.returncode is not None:
                 return self._child.returncode
 
-            # The child hasn't been waited on yet, so we need to do a
-            # non-blocking check to see if it's still running. The Popen type
-            # provides the poll() method for this, but that might reap the
-            # child and free its PID, which would make this a race with
-            # concurrent callers of the blocking wait() method above, who might
-            # be about to call os.waitid on that PID. When os.waitid is
-            # available, use that again here, with the WNOHANG flag. Otherwise
-            # just use poll() and rely on Python's internal synchronization.
-            if HAS_WAITID:
-                poll_result = os.waitid(
-                    os.P_PID, self._child.pid, os.WEXITED | os.WNOWAIT | os.WNOHANG
-                )
-            else:
-                poll_result = self._child.poll()
+            # If another thread is blocked in .wait(), assume the child is
+            # still running. This avoids reaping the child and causing errors
+            # in the WNOWAIT wait. Note that this also relies on .wait() to do
+            # a non-blocking .poll() before releasing the lock, to avoid a race
+            # condition. See the big comment in .wait() above.
+            if self._someone_is_waiting:
+                return None
 
-        # If either of the poll approaches above returned non-None, do a full
-        # wait to reap the child, which will not block. Note that we've
-        # released the child lock here, because wait() will re-acquire it.
-        if poll_result is not None:
-            return self.wait()
-        else:
-            return None
+            # Do a non-blocking poll, which might reap the child. The waiting
+            # flag is false, and we hold the lock, so we know no other threads
+            # are waiting, and there's no need to signal the condvar.
+            return self._child.poll()
 
     def kill(self):
-        with self._child_lock:
+        with self._condvar:
             if self._child.returncode is None:
                 # Previously we just used Popen.kill here. However, as of
                 # Python 3.9, Popen.send_signal (which is called by Popen.kill)
