@@ -1267,14 +1267,15 @@ class SharedChild:
             # coin flip. But that's not what happens in this situation. Here
             # the child has definitely exited, maybe seconds or minutes ago,
             # and a single call to .poll() would certainly have returned
-            # Some. It's only by racing against .wait() that this situation
+            # non-None. It's only by racing against .wait() that this situation
             # could incorrectly report that the child hasn't exited.
             #
             # To fix this, .wait() must do a non-blocking wait (that is,
             # actually check the status of the child process) *before*
-            # releasing the lock. If that returns false, then the only possible
-            # race is a race against the child itself, where again it's
-            # expected and fine for the result to be a coin flip.
+            # releasing the lock. (In fact, doing it before acquiring the lock
+            # could also be correct.) If that returns false, then the only
+            # possible race is a race against the child itself, where again
+            # it's expected and fine for the result to be a coin flip.
             if self._child.poll() is not None:
                 return self._child.returncode
 
