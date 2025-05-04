@@ -834,20 +834,7 @@ def test_wait_poll_race():
             return
 
 
-def test_kill_with_grandchild_stdin_bytes():
-    # We're going to start a child process, and that child is going to start a
-    # grandchild. The grandchild is going to sleep forever (1 day). We'll read
-    # some output from the child to make sure it's done starting the
-    # grandchild, and then we'll kill the child. The grandchild will not be
-    # killed, and it'll hold open copies of all the child's pipes. This tests
-    # that the wait done by kill only waits on the child to exit, and doesn't
-    # wait on IO to finish.
-    #
-    # This test leaks the grandchild process. I'm sorry.
-
-    # Writing to stdin means an IO thread is spawned, even though we're using
-    # a ReaderHandle to read stdout. What we're testing here is that kill()
-    # and try_wait() don't wait on that IO thread.
+def child_and_grandchild_command():
     child_code = """
 # What the child does is start the grandchild, print "started" to indicate that
 # that's done, and then wait on the grandchild.
@@ -870,8 +857,58 @@ print("started")
 sys.stdout.flush()
 grandchild.wait()
 """
-    # 1 MB should be enough to fill the pipe buffer and block.
-    reader = cmd("python", "-c", child_code).stdin_bytes(b"\0" * 1_000_000).reader()
+
+    return cmd("python", "-c", child_code)
+
+
+def test_kill_with_grandchild_stdin_bytes():
+    # We're going to start a child process, and that child is going to start a
+    # grandchild. The grandchild is going to sleep forever (1 day). We'll read
+    # some output from the child to make sure it's done starting the
+    # grandchild, and then we'll kill the child. The grandchild will not be
+    # killed, and it'll hold open copies of all the child's pipes. This tests
+    # that the wait done by kill only waits on the child to exit, and doesn't
+    # wait on IO to finish.
+    #
+    # This test leaks the grandchild process. I'm sorry.
+
+    # Writing to stdin means an IO thread is spawned, even though we're using a
+    # ReaderHandle to read stdout. What we're testing here is that kill() and
+    # poll() don't wait on that IO thread. 1 MB should be enough to fill the
+    # pipe buffer and block.
+    reader = child_and_grandchild_command().stdin_bytes(b"\0" * 1_000_000).reader()
+
+    # Read "started" from the child to make sure we don't kill it before it
+    # starts the grandchild. Note that read_to_end would block here.
+    started_bytes = reader.read(7)
+    assert started_bytes == b"started"
+
+    # Ok, we're going to kill() the child, which includes an implicit wait().
+    # The stdin_bytes thread is still running, and it won't exit until the
+    # grandchild exits ("forever" i.e. in one day). If we try to join them,
+    # this will not return.
+    reader.kill()
+
+    # At this point the child has been reaped, but .poll() should still return
+    # None, because the stdin bytes thread is still waiting.
+    assert reader.poll() is None
+
+
+def test_kill_with_grandchild_stderr_capture():
+    # We're going to start a child process, and that child is going to start a
+    # grandchild. The grandchild is going to sleep forever (1 day). We'll read
+    # some output from the child to make sure it's done starting the
+    # grandchild, and then we'll kill the child. The grandchild will not be
+    # killed, and it'll hold open copies of all the child's pipes. This tests
+    # that the wait done by kill only waits on the child to exit, and doesn't
+    # wait on IO to finish.
+    #
+    # This test leaks the grandchild process. I'm sorry.
+
+    # Capturing stderr means an IO thread is spawned, even though we're using a
+    # ReaderHandle to read stdout. What we're testing here is that kill() and
+    # poll() don't wait on that IO thread.
+    reader = child_and_grandchild_command().stderr_capture().reader()
 
     # Read "started" from the child to make sure we don't kill it before it
     # starts the grandchild. Note that read_to_end would block here.
