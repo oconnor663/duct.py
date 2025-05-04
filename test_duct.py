@@ -924,3 +924,93 @@ def test_kill_with_grandchild_stderr_capture():
     # At this point the child has been reaped, but .poll() should still return
     # None, because the stdin bytes thread is still waiting.
     assert reader.poll() is None
+
+
+def ps_observes_pid(pid):
+    assert os.name == "posix"
+    ps_output = cmd("ps", "-p", str(pid)).unchecked().stdout_capture().run()
+    ps_lines = ps_output.stdout.decode().splitlines()
+    # `ps` prints headers on the first line by default.
+    assert len(ps_lines) in (1, 2)
+    if len(ps_lines) == 2:
+        assert str(pid) in ps_lines[1]
+        # The exit code should agree with the output.
+        assert ps_output.status == 0
+        return True
+    else:
+        assert ps_output.status != 0
+        return False
+
+
+# The Python implementation of Duct doesn't need to do anything special to
+# clean up zombie children, because CPython subprocess module does it
+# automatically. See:
+#   - https://github.com/python/cpython/blob/v3.13.3/Lib/subprocess.py#L1133-L1146
+#   - https://github.com/python/cpython/blob/v3.13.3/Lib/subprocess.py#L268-L285
+# There's an argument that we shouldn't rely on this undocumented behavior,
+# maybe because implementation besides CPython could do something different.
+# However, the semantics of __del__ finalizers are thorny and underspecified(?)
+# enough that I'd rather trust CPython's cleanup than maintain a finalizer.
+def test_zombies_reaped():
+    if os.name != "posix":
+        # We don't spawn reaper threads on Windows, and `ps` doesn't exist on
+        # Windows either, so this is a Unix-only test.
+        return
+
+    child_handles = []
+    child_pids = []
+
+    # Spawn 10 children that will exit immediately.
+    (stdout_reader, stdout_writer) = os.pipe()
+    for _ in range(10):
+        handle = cmd("true").stdout_file(stdout_writer).start()
+        child_pids.append(handle.pids()[0])
+        child_handles.append(handle)
+
+    # Spawn 10 children that will wait on stdin to exit. The previous 10
+    # children will probably exit while we're doing this.
+    (stdin_reader, stdin_writer) = os.pipe()
+    for _ in range(10):
+        handle = cmd("cat").stdin_file(stdin_reader).stdout_file(stdout_writer).start()
+        child_pids.append(handle.pids()[0])
+        child_handles.append(handle)
+
+    # Close both of the fd's that we passed to children.
+    os.close(stdin_reader)
+    os.close(stdout_writer)
+
+    # At this point probably half the children have exited and become zombies,
+    # but all of the child PIDs should still be observable.
+    for pid in child_pids:
+        assert ps_observes_pid(pid)
+
+    # Drop all the handles. There are no other references to them, so their
+    # finalizers should run immediately. The first 10 children will probably
+    # get reaped at this point without spawning a thread. The last 10 children
+    # definitely have not exited, and each of them will wind up in the
+    # subprocess module's `_active` list. (At least that's how it works on Unix
+    # platforms as of CPython 3.13.)
+    del child_handles
+    del handle  # the loop variable above, still in scope
+
+    # Close the stdin writer. Now the last 10 children will begin exiting.
+    os.close(stdin_writer)
+
+    # Read the stdout pipe to EOF. This means all the children have exited.
+    stdout_bytes = os.fdopen(stdout_reader, "rb").read()
+    assert stdout_bytes == b"", "no output expected"
+
+    # Assert that all the children get cleaned up. This is a Unix-only test, so
+    # we can just shell out to `ps`. One of the tricky details here in CPython
+    # is that best-effort zombie cleanup is triggered by subsequent calls to
+    # Popen, so shelling out to `ps` is actually a load-bearing implementation
+    # detail in this test. If we just e.g. read /proc instead of shelling out,
+    # this assert might actually fail.
+    for i, pid in enumerate(child_pids):
+        print(f"checking child #{i} (PID {pid})")
+        # Retry `ps` 100 times for each child, to be as confident as possible
+        # that the child has time to get reaped.
+        tries = 0
+        while ps_observes_pid(pid):
+            tries += 1
+            assert tries < 100, f"child #{i} (PID {pid}) never went away?"
