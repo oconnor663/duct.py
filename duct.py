@@ -237,11 +237,6 @@ class Expression:
         ``pipefail`` option. If both sides return non-zero, and one of them is
         :func:`unchecked`, then the checked side wins. Otherwise the right side
         wins.
-
-        During spawning, if the left side of the pipe spawns successfully, but
-        the right side fails to spawn, the left side will be killed and
-        awaited. That's necessary to return the spawn errors immediately,
-        without leaking the left side as a zombie.
         """
         return Expression(PIPE, None, (self, right_side))
 
@@ -554,25 +549,17 @@ def start_cmd(context, prog, args):
 
 def start_pipe(context, left_expr, right_expr):
     read_pipe, write_pipe = open_pipe()
-    with read_pipe:
-        with write_pipe:
-            # Start the left side first. If this fails for some reason,
-            # just let the failure propagate.
-            left_context = context._replace(stdout=write_pipe)
-            left_handle = start_expression(left_expr, left_context)
+    with read_pipe, write_pipe:
+        # Start the left side first. If this fails for some reason,
+        # just let the failure propagate.
+        left_context = context._replace(stdout=write_pipe)
+        left_handle = start_expression(left_expr, left_context)
 
-        # Now the left side is started. If the right side fails to start,
-        # we can't let the left side turn into a zombie. We have to await
-        # it, and that means we have to kill it.
+        # Start the right side. If this fails for some reason, we'll leak
+        # the left side, but CPython's Popen finalizer will ultimately
+        # clean up the zombie.
         right_context = context._replace(stdin=read_pipe)
-        try:
-            right_handle = start_expression(right_expr, right_context)
-        except Exception:
-            kill(left_handle)
-            # This wait helper function doesn't throw on non-zero statuses or
-            # join capture threads.
-            wait_on_status(left_handle, True)
-            raise
+        right_handle = start_expression(right_expr, right_context)
 
     return (left_handle, right_handle)
 
