@@ -881,15 +881,16 @@ def test_kill_with_grandchild_stdin_bytes():
     started_bytes = reader.read(7)
     assert started_bytes == b"started"
 
-    # Ok, we're going to kill() the child, which includes an implicit wait().
-    # The stdin_bytes thread is still running, and it won't exit until the
-    # grandchild exits ("forever" i.e. in one day). If we try to join them,
-    # this will not return.
+    # Kill() the child. This does not wait.
     reader.kill()
 
-    # At this point the child has been reaped, but .poll() should still return
-    # None, because the stdin bytes thread is still waiting.
-    assert reader.poll() is None
+    # At this point .poll() should still return None, because the stdin bytes
+    # thread is still waiting. It won't exit until the grandchild exits
+    # ("forever" i.e. in one day). If we try to join IO threads, this will not
+    # return. Loop on this for 100ms to be sure it waits.
+    start_time = time.time()
+    while time.time() - start_time < 0.1:
+        assert reader.poll() is None
 
 
 def test_kill_with_grandchild_stderr_capture():
@@ -913,15 +914,16 @@ def test_kill_with_grandchild_stderr_capture():
     started_bytes = reader.read(7)
     assert started_bytes == b"started"
 
-    # Ok, we're going to kill() the child, which includes an implicit wait().
-    # The stdin_bytes thread is still running, and it won't exit until the
-    # grandchild exits ("forever" i.e. in one day). If we try to join them,
-    # this will not return.
+    # Kill() the child. This does not wait.
     reader.kill()
 
-    # At this point the child has been reaped, but .poll() should still return
-    # None, because the stdin bytes thread is still waiting.
-    assert reader.poll() is None
+    # At this point .poll() should still return None, because the stderr
+    # capture thread is still waiting. It won't exit until the grandchild exits
+    # ("forever" i.e. in one day). If we try to join IO threads, this will not
+    # return. Loop on this for 100ms to be sure it waits.
+    start_time = time.time()
+    while time.time() - start_time < 0.1:
+        assert reader.poll() is None
 
 
 def ps_observes_pid(pid):

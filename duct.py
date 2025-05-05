@@ -767,26 +767,12 @@ class Handle:
 
     def kill(self):
         r"""Send a kill signal to the child process(es). This is equivalent to
-        :func:`Popen.kill`, which uses ``SIGKILL`` on Unix. After sending the
-        signal, wait for the child to finish and free the OS resources
-        associated with it. If the child has already been waited on, this has
-        no effect.
-
-        This function does not return an :class:`Output`, and it does not raise
-        :class:`StatusError`. However, subsequent calls to :func:`wait` or
-        :func:`poll` are likely to raise :class:`StatusError` if you didn't
-        use :func:`Expression.unchecked`.
+        :func:`Popen.kill`, which uses ``SIGKILL`` on Unix.
 
         >>> handle = cmd("sleep", "1000").start()
         >>> handle.kill()
         """
         kill(self)
-        # Note that this *must not* call wait_on_status_and_output. There might
-        # be un-signaled grandchild processes holding the output pipe, and we
-        # can't expect them to exit promptly. We only want to reap our
-        # immediate zombie children here. See gotchas.md for an extensive
-        # discussion of why we can't do better.
-        wait_on_status(self, True)
 
     def pids(self):
         r"""Return the PIDs of all the running child processes. The order of
