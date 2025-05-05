@@ -196,8 +196,12 @@ class Expression:
         Output(status=0, stdout=b'hi\n', stderr=None)
 
         Note that leaking a :class:`Handle` without calling :func:`Handle.wait`
-        will turn the children into zombie processes. In a long-running
-        program, that could be serious resource leak.
+        means the child process becomes a `zombie
+        <https://en.wikipedia.org/wiki/Zombie_process>`_ when it exits.
+        However, CPython's ``subprocess`` module (which Duct uses internally)
+        has some `undocumented, best-effort cleanup
+        <https://github.com/python/cpython/blob/v3.13.3/Lib/subprocess.py#L1133-L1146>`_
+        for zombie processes that's probably sufficient for most callers.
         """
         with new_iocontext() as context:
             handle = start_expression(self, context)
@@ -704,9 +708,13 @@ class Handle:
     r"""A handle representing one or more running child processes, returned by
     the :func:`Expression.start` method.
 
-    Note that leaking a :class:`Handle` without calling :func:`wait` will turn
-    the children into zombie processes. In a long-running program, that could
-    be serious resource leak.
+    Note that leaking a :class:`Handle` without calling :func:`Handle.wait`
+    means the child process becomes a `zombie
+    <https://en.wikipedia.org/wiki/Zombie_process>`_ when it exits. However,
+    CPython's ``subprocess`` module (which Duct uses internally) has some
+    `undocumented, best-effort cleanup
+    <https://github.com/python/cpython/blob/v3.13.3/Lib/subprocess.py#L1133-L1146>`_
+    for zombie processes that's probably sufficient for most callers.
     """
 
     def __init__(
