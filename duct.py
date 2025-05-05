@@ -1372,20 +1372,16 @@ class ReaderHandle(io.IOBase):
     r"""A stdout reader that automatically closes its read pipe and awaits
     child processes once EOF is reached.
 
-    This inherits from :class:`io.IOBase`, and you can call :func:`read` and
-    related methods like :func:`readlines` on it. When :class:`ReaderHandle` is
-    used as a context manager with the ``with`` keyword, context exit will
-    automatically call :func:`close`.
-
-    Note that if you don't read to EOF, and you don't call :func:`close` or use
-    a ``with`` statement, then the child will become a zombie. Using a ``with``
-    statement is recommended for exception safety.
+    :class:`ReaderHandle` inherits from :class:`io.IOBase`, and you can call
+    :func:`read` and related methods like :func:`readlines` on it. When
+    :class:`ReaderHandle` reads EOF, it does an automatic blocking wait to reap
+    the child, which raises :class:`StatusError` if the child exited with a
+    non-zero status and :func:`Expression.unchecked` was not used.
 
     If one thread is blocked on a call to :func:`read`, then calling
     :func:`kill` from another thread is an effective way to unblock the reader.
-    However, note that killed child processes return a non-zero exit status,
-    which turns into an exception for the reader by default, unless you use
-    :func:`Expression.unchecked`.
+    However, note that killed child processes often return a non-zero exit
+    status, raising :class:`StatusError` for the reader.
     """
 
     def __init__(self, handle, read_pipe):
@@ -1428,20 +1424,19 @@ class ReaderHandle(io.IOBase):
         return ret
 
     def close(self):
-        r"""Close the read pipe and call :func:`kill` on the inner
-        :class:`Handle`.
+        r"""Close the read pipe
 
         :class:`ReaderHandle` is a context manager, and if you use it with the
-        ``with`` keyword, context exit will automatically call :func:`close`.
-        Using a ``with`` statement is recommended, for exception safety.
+        ``with`` keyword, context exit will call :func:`close`. Note that in
+        the common case, reading to EOF will also call :func:`close` before
+        context exit. Additional calls to :func:`close` after the first have no
+        effect.
 
         >>> reader = cmd("echo", "hi").reader()
         >>> reader.close()
         """
         if self._read_pipe is not None:
-            self._handle.kill()  # Does not raise StatusError.
             self._read_pipe.close()
-            self._read_pipe = None
 
     def poll(self):
         r"""Check whether the child process(es) have finished, and if so return

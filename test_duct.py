@@ -659,8 +659,7 @@ def test_reader_positive_size():
 def test_reader_close():
     reader = sleep_cmd(1000000).reader()
     reader.close()
-    assert reader._read_pipe is None
-    with raises(StatusError):
+    with raises(ValueError):
         reader.read()
 
 
@@ -668,8 +667,7 @@ def test_reader_with():
     reader = sleep_cmd(1000000).reader()
     with reader:
         pass
-    assert reader._read_pipe is None
-    with raises(StatusError):
+    with raises(ValueError):
         reader.read()
 
 
