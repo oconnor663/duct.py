@@ -757,6 +757,8 @@ class Handle:
         >>> handle = cmd("sleep", "1000").unchecked().start()
         >>> assert handle.poll() is None
         >>> handle.kill()
+        >>> handle.wait()
+        Output(status=-9, stdout=None, stderr=None)
         >>> handle.poll()
         Output(status=-9, stdout=None, stderr=None)
         """
