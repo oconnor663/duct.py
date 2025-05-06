@@ -18,13 +18,12 @@ affect the implementation.
 
 * [Reporting errors by default](#reporting-errors-by-default)
 * [Catching pipe errors when writing to standard input](#catching-pipe-errors-when-writing-to-standard-input)
-* [Waiting on killed children by default](#waiting-on-killed-children-by-default)
+* [Cleaning up zombie children](#cleaning-up-zombie-children)
 * [Making `kill` thread-safe](#making-kill-thread-safe)
 * [Adding `./` to program names given as relative paths](#adding--to-program-names-given-as-relative-paths)
 * [Preventing `dir` from affecting relative program paths on Unix](#preventing-dir-from-affecting-relative-program-paths-on-unix)
 * [Preventing pipe inheritance races on Windows](#preventing-pipe-inheritance-races-on-windows)
 * [Matching platform case-sensitivity for environment variables](#matching-platform-case-sensitivity-for-environment-variables)
-* [Cleaning up partially started pipelines](#cleaning-up-partially-started-pipelines)
 * [Using IO threads to avoid blocking children](#using-io-threads-to-avoid-blocking-children)
 * [Killing grandchild processes?](#killing-grandchild-processes)
 
@@ -34,7 +33,7 @@ Most programming languages make error checking the default, either by crashing
 your program with an exception, or by emitting warnings or compiler errors for
 unchecked results. But the child process APIs in most standard libraries
 (including Python and Rust) do the opposite, ignoring non-zero exit statuses by
-default. That's unfortunate, because most command line utilities helpfully
+default. That's unfortunate, because many command line utilities helpfully
 distinguish between success and failure in their exit status. For example, if
 you give the wrong path to a `tar` command:
 
@@ -61,44 +60,35 @@ have no choice but to set a signal handler from library code, which might
 conflict with application code or other libraries. There is no good solution to
 this problem.
 
-## Waiting on killed children by default
+## Cleaning up zombie children
 
-Many languages (Python, Rust, Go) provide a `kill` API that sends `SIGKILL` to
-a child process on Unix or calls `TerminateProcess` on Windows. The caller has
-to remember to wait on the child afterwards, or it turns into a zombie and
-leaks resources. Duct waits by default instead.
+On Unix platforms (but not Windows) child processes hold some OS resources even
+after they exit, until their parent process waits on them and receives their
+exit status. The OS will do this cleanup automatically if the parent exits, but
+not as long as the parent is alive. These exited-but-un-"reaped" children are
+called [zombie processes](https://en.wikipedia.org/wiki/Zombie_process), and
+they're a common type of resource leak if you run child processes in the
+background (`start` as opposed to `run`).
 
-`SIGKILL` cannot be caught or ignored, and so waiting will almost always return
-quickly. One of the rare exceptions to this is if the child is stuck in an
-uninterruptible system call, for example a `read` of an unresponsive FUSE
-filesystem. In general, Duct's correctness priorities are:
+The Python [`subprocess`](https://docs.python.org/3/library/subprocess.html)
+module mitigates this by [keeping a global list of leaked child
+processes](https://github.com/python/cpython/blob/v3.13.3/Lib/subprocess.py#L1133-L1146)
+and polling each of them [whenever it's about to spawn a new child
+process](https://github.com/python/cpython/blob/v3.13.3/Lib/subprocess.py#L832).
+The Rust implementation of Duct uses the same strategy. The downside of this
+strategy is that it makes process spawning O(n<sup>2</sup>) in the worst case,
+if the caller leaks lots of long-lived child processes. Children don't enter
+the global list as long you retain a `Handle`, so most applications won't hit
+this case.
 
-1. Do not leave zombie children or leak other resources.
-2. Do not block in a non-blocking API (`start`, `reader`, `poll`, or `kill`).
-3. Do not let errors pass silently.
-
-In this case #1 takes priority over #2.
-
-However, one important subtlety here is that we can only kill child processes
-that we spawned. We can't kill grandchild processes that our children spawned.
-(See the entire [Killing grandchild processes?](#killing-grandchild-processes)
-section for more on this.) Those grandchild processes might inherit any output
-pipes that we gave to the child. And that means that even though we do expect
-the child to exit promptly in non-pathological cases, we can't expect a read of
-the child's stdout pipe to return EOF promptly. Unkilled grandchildren might
-keep it open. So the automatic wait performed by `kill` must _not_ wait on IO
-threads to finish. It must only reap zombie children.
-
-A lucky break for us here is that, as long as we reap our own zombie children,
-most other cleanup is automatic. Most standard libraries take care of "zombie
-threads" for us. (Rust detaches threads in the
-[`std::thread::JoinHandle`](https://doc.rust-lang.org/std/thread/struct.JoinHandle.html)
-destructor, and Python detaches threads as soon as they're spawned.) So we can
-leave IO threads running until any pipe-holding grandchildren exit naturally.
-And the OS automatically reaps zombie grandchildren if their parent has exited.
-The only active step we need to take is to set the "daemon" flag on IO threads
-in Python, so that they don't block the parent process from exiting. (Rust
-threads never block exit.)
+An alternative could be to spawn a waiter thread for each leaked child, but
+that's more expensive in the common case, and also spawning a thread can fail.
+It would be better to share a global waiter thread, but the historical options
+for implementing something like that (`SIGCHLD` or `waitpid(-1)`) are
+off-limits to library code that doesn't own the whole parent process. Polling
+Linux [`pidfd`](https://www.corsix.org/content/what-is-a-pidfd)s might be the
+best modern option, but that API is still new by kernel standards (2019), and
+most other Unix platforms have no equivalent.
 
 ## Making `kill` thread-safe
 
@@ -117,9 +107,9 @@ so that its PID isn't freed for reuse. That gives the waiting thread a chance
 to set a flag to block further kills, before reaping the child. Duct uses this
 approach on Unix-like platforms. Windows doesn't have this problem.
 
-A recent update here: As part of a best-effort check for this bug, Python 3.9
-[changed the behavior](https://bugs.python.org/issue38630) of `Popen.kill` to
-reap child processes that have already exited. This [interacts
+As part of a best-effort check for this bug, Python 3.9 [changed the
+behavior](https://bugs.python.org/issue38630) of `Popen.kill` to reap child
+processes that have already exited. That [interacts
 poorly](https://github.com/oconnor663/duct.py/commit/5dfae70cc9481051c5e53da0c48d9efa8ff71507)
 with code that calls `os.waitid` or `os.waitpid` directly.
 
@@ -130,9 +120,8 @@ current directory or e.g. `/usr/bin/foo` in the `PATH`. Different platforms do
 different things here: Unix-like platforms usually require the leading `./` for
 programs in the current directory, but Windows will accept a bare filename.
 Duct defers to the platform for interpreting program names that are given as
-strings, but it explicitly prepends `./` to program names that are given as
-explicit path types (`pathlib` in Python, `std::path` in Rust) when the path is
-relative.
+strings, but it prepends `./` to program names that are given as path types
+(`pathlib` in Python, `std::path` in Rust) when the path is relative.
 
 This solves two problems:
 
@@ -143,7 +132,7 @@ This solves two problems:
   "command not found", from instead matching a program in the `%PATH%` on
   Windows.
 
-A recent update here: Rust 1.58 [changed the
+Note that Rust 1.58 [changed the
 behavior](https://blog.rust-lang.org/2022/01/13/Rust-1.58.0.html#reduced-windows-command-search-path)
 of `std::process::Command` to exclude the current directory from the search
 path on Windows.
@@ -190,41 +179,6 @@ Duct makes no guarantees about non-ASCII environment variable names. Their
 behavior is implementation-dependent, platform-dependent, programming
 language-dependent, and probably also human language-dependent.
 
-## Cleaning up partially started pipelines
-
-If the left half of a pipeline starts successfully, but the right half fails to
-start, Duct **kills and awaits** the left half, and then reports the original
-error from the right half.
-
-To be clear, "failed to start" doesn't mean "exited with a non-zero status".
-Rather, this is the situation where the right side never spawned at all. There
-is no exit status, because there was no child process. Most commonly that's
-because a command name was misspelled, a path was constructed incorrectly, or
-the target program isn't installed. Less commonly, the system may be under
-heavy load and failing to spawn new processes in general.
-
-Killing the left side is an unfortunate compromise. It's bad behavior to kill
-child processes without being asked to by the caller. An unexpected kill signal
-might cause some programs to misbehave or corrupt data. But recall Duct's
-correctness priorities:
-
-1. Do not leave zombie children or leak other resources.
-2. Do not block in a non-blocking API (`start`, `reader`, `try_wait`, or
-   `kill`).
-3. Do not let errors pass silently.
-
-Leaving the left side running would violate #1. If the child failed to start
-because the system was under heavy load, leaking resources might exacerbate the
-problem and make the whole system unrecoverable. Waiting on the left side to
-exit on its own would violate #2. Deferring error reporting until the caller
-waits would violate #3.
-
-Killing the left side isn't good, but it's the least bad option in a bad
-situation. A correct program will only encounter this behavior when the whole
-system is suffering from resource exhaustion. The Linux OOM killer might
-already be killing child processes randomly in that case, and the parent
-already needs to think about failure handling and data corruption.
-
 ## Using IO threads to avoid blocking children
 
 When input bytes are supplied or output bytes are captured, Duct's `start`
@@ -233,10 +187,9 @@ method uses background threads to do IO, so that IO makes progress even if
 standard ouput, since that's left to the caller, but it still uses background
 threads to supply input bytes or to capture standard error.
 
-Consider the following scenario. You want to spawn two child processes, which
-will exchange messages with each other in the background somehow, e.g. using
-D-Bus. You also want to capture the output of each process. Your code might
-look like this:
+Consider the following scenario. You want to spawn two child processes that
+will talk to each other somehow, for example using the local network. You also
+want to capture the output of each process. Your code might look like this:
 
 ```python
 handle1 = cmd("child1").stdout_capture().start()
@@ -247,19 +200,31 @@ output2 = handle2.wait().stdout
 
 If Duct handled captured output without threads, e.g. using a read loop inside
 of `wait`, that code could have a deadlock once the output grew large enough.
-(So of course it would pass tests, but fail occasionally in production.)
-Suppose that the messages these two children exchanged with each other were
-synchronous somehow, such that blocking one child would eventually block the
-other. And suppose that both children had enough output that they could also
-block if the parent didn't clear space in their stdout pipe buffers by reading.
-The call to `handle1.wait` would block until `child1` was finished. Then
-`child2` would block writing to stdout, because the parent wouldn't be reading
-it yet. And then `child1` would block on `child2`, waiting for messages. That
-would be a deadlock, and it would probably be difficult to reproduce and debug.
+(So of course it would pass tests but fail occasionally in production.) Suppose
+that the messages the children exchanged with each other were synchronous
+somehow, such that blocking one child would eventually block the other. And
+suppose that both children had enough output that they could also block if the
+parent didn't clear space in their stdout pipe buffers by reading. The call to
+`handle1.wait` would block until `child1` was finished. Then `child2` would
+block writing to stdout, because the parent wouldn't be reading it yet.
+Finally, `child1` would block on `child2`, waiting for messages. That would be
+a deadlock, and it would probably be difficult to reproduce and debug.
 
 For this reason, the `start` method must use threads to supply input and
 capture output. That guarantees that the parent will never cause its children
 to block on output, regardless of its order of operations after `start`.
+
+Also, note that observing that a child process has exited does not guarantee
+that its IO pipes will close or that any IO threads using those pipes will
+exit. If the child process spawns any grandchild processes (more on those
+below), the grandchildren usually inherit copies of the child's IO pipes, and
+they can outlive the child and keep those pipes open indefinitely. Non-blocking
+methods like
+[`Handle.poll`](https://ductpy.readthedocs.io/en/latest/#duct.Handle.poll) in
+Python or
+[`Handle::try_wait`](https://docs.rs/duct/latest/duct/struct.Handle.html#method.try_wait)
+in Rust need to explicitly check whether IO threads have exited before doing
+any blocking joins.
 
 ## Killing grandchild processes?
 
@@ -324,21 +289,16 @@ the tree, as the OS automatically reaps any zombie whose parent is also a
 zombie. So close!
 
 The modern solution for all of this on Linux is supposed to be
-[cgroups](https://en.wikipedia.org/wiki/Cgroups). But as if to rub salt in our
-wounds, it turns out there's [no way to atomically signal a
+[cgroups](https://en.wikipedia.org/wiki/Cgroups). ~~But as if to rub salt in
+our wounds, it turns out there's [no way to atomically signal a
 cgroup](https://jdebp.eu/FGA/linux-control-groups-are-not-jobs.html). Systemd
 works around this problem with a kill loop that repeatedly queries the PIDs in
 a cgroup and tries to kill all of them individually. And it's _still_
-vulnerable to the PID reuse race. Solving those races might be possible by
-abusing SIGSTOP (you better hope you're the only part of the system possibly
-sending SIGCONT to unrelated processes) or something called "the freezer",
-though if Systemd doesn't attempt to use those techniques that's a pretty bad
-sign.
+vulnerable to the PID reuse race.~~ **Update: As of Linux 5.14 (August 2021)
+cgroups support an atomic `cgroup.kill` operation that looks robust. The last
+major holdout might be macOS.**
 
-Linux is in the middle of adding new APIs like
-[`pidfd_send_signal`](https://lwn.net/Articles/794707/), but none of them are
-aimed at improving the situation with grandchildren. Windows has a cleaner
-solution ([job
+Windows has a cleaner solution ([job
 objects](https://docs.microsoft.com/en-us/windows/win32/procthread/job-objects)),
 but even there it sounds like some important features aren't supported on
 Windows 7. Realistically, there won't be good techniques for Duct to use to
