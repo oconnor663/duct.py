@@ -1,4 +1,3 @@
-# -*- coding: UTF-8 -*-
 r"""\
 Duct is a library for running child processes. Duct makes it easy to build
 pipelines and redirect IO like a shell. At the same time, Duct helps you write
@@ -1319,9 +1318,10 @@ class SharedChild:
             if wait_exception is not None:
                 raise wait_exception
             self._child.poll()
-            assert (
-                self._child.returncode is not None
-            ), "It should be impossible for the child to still be running. We already waited on it."
+            assert self._child.returncode is not None, (
+                "It should be impossible for the child to still be running. "
+                "We already waited on it."
+            )
             return self._child.returncode
 
     def poll(self):

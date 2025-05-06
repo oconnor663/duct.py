@@ -1,5 +1,3 @@
-# coding=UTF-8
-
 import binascii
 import os
 import sys
@@ -768,17 +766,17 @@ def test_kill_after_child_exit():
 # This is ported from test_wait_try_wait_race in shared_child.rs:
 # https://github.com/oconnor663/shared_child.rs/blob/0c1910c83c15fc12444261844f663bd3f162df28/src/lib.rs#L531
 def test_wait_poll_race():
-    # Make sure that .wait() and .poll() can't race against each other. The
-    # scenario we're worried about is:
-    #   1. wait() takes the lock, set the state to Waiting, and releases the lock.
-    #   2. poll() swoops in, takes the lock, sees the Waiting state, and returns Ok(None).
-    #   3. wait() resumes, actually calls waitit(), observes the child has exited, retakes the
-    #      lock, reaps the child, and sets the state to Exited.
-    # A race like this could cause .poll() to report that the child hasn't
-    # exited, even if in fact the child exited long ago. A subsequent call to
-    # .poll() would almost certainly report Ok(Some(_)), but the first call is
-    # still a bug. The way to prevent the bug is by making .wait() do a
-    # non-blocking call to waitid() before releasing the lock.
+    # Make sure that .wait() and .poll() can't race against each other. The scenario
+    # we're worried about is:
+    #   1. wait() takes the lock, set the state to Waiting, and releases the lock. 2.
+    #   poll() swoops in, takes the lock, sees the Waiting state, and returns Ok(None).
+    #   3. wait() resumes, actually calls waitit(), observes the child has exited,
+    #   retakes the lock, reaps the child, and sets the state to Exited.
+    # A race like this could cause .poll() to report that the child hasn't exited, even
+    # if in fact the child exited long ago. A subsequent call to .poll() would almost
+    # certainly report Ok(Some(_)), but the first call is still a bug. The way to
+    # prevent the bug is by making .wait() do a non-blocking call to waitid() before
+    # releasing the lock.
     test_duration_secs = 1
     env_var_name = "RACE_TEST_SECONDS"
     if env_var_name in os.environ:
@@ -821,9 +819,10 @@ def test_wait_poll_race():
         wait_thread.join()
         poll_thread.join()
         test_time_so_far = time.time() - test_start
-        assert (
-            poll_ret is not None
-        ), f"encountered the race condition after {test_time_so_far} seconds ({iterations} iterations)"
+        assert poll_ret is not None, (
+            f"encountered the race condition after {test_time_so_far} seconds "
+            f"({iterations} iterations)"
+        )
         iterations += 1
 
         # If we've met the target test duration (1 sec by default), exit with
