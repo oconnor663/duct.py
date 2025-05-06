@@ -742,7 +742,8 @@ class Handle:
         >>> handle.wait()
         Output(status=0, stdout=None, stderr=None)
         """
-        status, output = wait_on_status_and_output(self)
+        # wait_on_status_and_output can't return None if blocking is True.
+        status, output = wait_on_status_and_output(self, blocking=True)
         if is_checked_error(status):
             raise StatusError(output, self._expression_str)
         return output
@@ -759,11 +760,14 @@ class Handle:
         >>> handle.poll()
         Output(status=-9, stdout=None, stderr=None)
         """
-        status = wait_on_status(self, False)
-        if status is None:
+        maybe_status_and_output = wait_on_status_and_output(self, blocking=False)
+        if maybe_status_and_output is None:
             return None
+        status, output = maybe_status_and_output
+        if is_checked_error(status):
+            raise StatusError(output, self._expression_str)
         else:
-            return self.wait()
+            return output
 
     def kill(self):
         r"""Send a kill signal to the child process(es). This is equivalent to
@@ -784,11 +788,21 @@ class Handle:
 
 # This function handle waiting and collecting output, but does not raise status
 # errors for non-zero exit statuses.
-def wait_on_status_and_output(handle):
-    status = wait_on_status(handle, True)
-    stdout = handle._stdout_capture_context.join_thread_if_needed()
-    stderr = handle._stderr_capture_context.join_thread_if_needed()
-    output = Output(status.code, stdout, stderr)
+def wait_on_status_and_output(handle, blocking):
+    status = wait_on_status(handle, blocking)
+    if status is None:
+        assert not blocking
+        return None
+    stdout_capture_finished, stdout_bytes = (
+        handle._stdout_capture_context.join_thread_if_needed(blocking)
+    )
+    stderr_capture_finished, stderr_bytes = (
+        handle._stderr_capture_context.join_thread_if_needed(blocking)
+    )
+    if not stdout_capture_finished or not stderr_capture_finished:
+        assert not blocking
+        return None
+    output = Output(status.code, stdout_bytes, stderr_bytes)
     return (status, output)
 
 
@@ -801,16 +815,18 @@ def wait_on_status(handle, blocking):
         return wait_pipe(left, right, blocking)
 
     status = wait_on_status(handle._inner, blocking)
-    if blocking:
-        assert status is not None
+    if status is None:
+        assert not blocking
+        return None
 
     if handle._type == STDIN_BYTES:
         io_thread = handle._payload
-        if status is not None:
-            io_thread.join()
+        # If blocking is False, make sure .join() will not block.
+        if not blocking and io_thread.is_alive():
+            return None
+        io_thread.join()
     elif handle._type == UNCHECKED:
-        if status is not None:
-            status = status._replace(checked=False)
+        status = status._replace(checked=False)
 
     return status
 
@@ -1019,11 +1035,15 @@ class OutputCaptureContext:
         self._thread = DaemonicThread(read_fn)
         self._thread.start()
 
-    def join_thread_if_needed(self):
+    # returns (exited, return value)
+    def join_thread_if_needed(self, blocking):
         if self._thread is not None:
-            return self._thread.join()
+            # If blocking is False, make sure .join() will not block.
+            if not blocking and self._thread.is_alive():
+                return False, None
+            return True, self._thread.join()
         else:
-            return None
+            return True, None
 
 
 def stringify_if_path(x):
