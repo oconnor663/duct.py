@@ -36,8 +36,7 @@ Merge standard error into standard output and read both incrementally:
 
 >>> big_cmd = cmd("bash", "-c", "echo out && echo err 1>&2")
 >>> reader = big_cmd.stderr_to_stdout().reader()
->>> with reader:
-...     reader.readlines()
+>>> reader.readlines()
 [b'out\n', b'err\n']
 
 Children that exit with a non-zero status raise an exception by default:
@@ -219,8 +218,7 @@ class Expression:
         performance issues or deadlocks.
 
         >>> reader = cmd("echo", "hi").reader()
-        >>> with reader:
-        ...     reader.read()
+        >>> reader.read()
         b'hi\n'
         """
         with new_iocontext() as context:
@@ -1402,18 +1400,17 @@ class ReaderHandle(io.IOBase):
         like :func:`readlines` are also available.
 
         >>> reader = cmd("printf", r"a\nb\nc\n").reader()
-        >>> with reader:
-        ...     reader.read(2)
-        ...     reader.readlines()
+        >>> reader.read(2)
         b'a\n'
+        >>> reader.readlines()
         [b'b\n', b'c\n']
 
         If :func:`read` reaches EOF and awaits the child, and the child exits
         with a non-zero status, and :func:`Expression.unchecked` was not used,
         :func:`read` will raise a :class:`StatusError`.
 
-        >>> with cmd("false").reader() as reader:
-        ...     reader.read()
+        >>> reader = cmd("false").reader()
+        >>> reader.read()
         Traceback (most recent call last):
         ...
         duct.StatusError: Expression cmd('false').stdout_capture() returned non-zero exit status: Output(status=1, stdout=None, stderr=None)
@@ -1431,21 +1428,6 @@ class ReaderHandle(io.IOBase):
             self._handle.wait()  # May raise a StatusError.
         return ret
 
-    def close(self):
-        r"""Close the read pipe
-
-        :class:`ReaderHandle` is a context manager, and if you use it with the
-        ``with`` keyword, context exit will call :func:`close`. Note that in
-        the common case, reading to EOF will also call :func:`close` before
-        context exit. Additional calls to :func:`close` after the first have no
-        effect.
-
-        >>> reader = cmd("echo", "hi").reader()
-        >>> reader.close()
-        """
-        if self._read_pipe is not None:
-            self._read_pipe.close()
-
     def poll(self):
         r"""Check whether the child process(es) have finished, and if so return
         an :class:`Output` containing the exit status and any captured output.
@@ -1457,28 +1439,22 @@ class ReaderHandle(io.IOBase):
 
         >>> input_bytes = bytes([42]) * 1000000
         >>> reader = cmd("cat").stdin_bytes(input_bytes).reader()
-        >>> with reader:
-        ...     assert reader.poll() is None
-        ...     output_bytes = reader.read()
-        ...     assert reader.poll() is not None
-        ...     assert input_bytes == output_bytes
+        >>> assert reader.poll() is None
+        >>> output_bytes = reader.read()
+        >>> assert reader.poll() is not None
+        >>> assert input_bytes == output_bytes
         """
         return self._handle.poll()
 
     def kill(self):
         r"""Call :func:`kill` on the inner :class:`Handle`.
 
-        This function does not raise :class:`StatusError`. However, subsequent
-        calls to :func:`read` are likely to raise :class:`StatusError` if you
-        didn't use :func:`Expression.unchecked`.
-
         >>> child_code = "import sys, time; print('hi'); sys.stdout.flush(); time.sleep(1000000)"
         >>> reader = cmd("python", "-c", child_code).unchecked().reader()
-        >>> with reader:
-        ...     reader.read(3)
-        ...     reader.kill()
-        ...     reader.read()
+        >>> reader.read(3)
         b'hi\n'
+        >>> reader.kill()
+        >>> reader.read()
         b''
         """  # noqa: E501
         self._handle.kill()

@@ -654,21 +654,6 @@ def test_reader_positive_size():
     assert reader._read_pipe is None, "has been awaited"
 
 
-def test_reader_close():
-    reader = sleep_cmd(1000000).reader()
-    reader.close()
-    with raises(ValueError):
-        reader.read()
-
-
-def test_reader_with():
-    reader = sleep_cmd(1000000).reader()
-    with reader:
-        pass
-    with raises(ValueError):
-        reader.read()
-
-
 def test_kill_with_grandchild():
     # We're going to start a child process, and that child is going to start a
     # grandchild. The grandchild is going to sleep forever. We'll read some
