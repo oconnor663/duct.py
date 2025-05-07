@@ -1,0 +1,11 @@
+# Taken from: https://docs.readthedocs.com/platform/stable/config-file/index.html
+
+version: 2
+
+build:
+  os: ubuntu-lts-latest
+  tools:
+    python: "3.13"
+
+sphinx:
+  configuration: docs/source/conf.py
