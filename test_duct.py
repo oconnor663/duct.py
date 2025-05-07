@@ -579,10 +579,10 @@ def test_wait_and_kill():
     assert handle.poll() is None
     assert handle.poll() is None
     handle.kill()
-    # Twice to exercise the already-waited branches.
-    handle.kill()
     with raises(StatusError):
         handle.wait()
+    with raises(StatusError):
+        handle.poll()
 
 
 def test_right_side_fails_to_start():
