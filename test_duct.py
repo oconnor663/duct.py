@@ -568,6 +568,11 @@ def test_poll():
     assert output.stdout == b"output stuff" + NEWLINE
     assert output.stderr == b"error stuff" + NEWLINE
 
+    deprecated_output = handle.try_wait()
+    assert output.status == deprecated_output.status
+    assert output.stdout == deprecated_output.stdout
+    assert output.stderr == deprecated_output.stderr
+
 
 def test_wait_and_kill():
     handle = sleep_cmd(1000000).pipe(cat_cmd()).env("A", "B").start()
@@ -875,6 +880,7 @@ def test_kill_with_grandchild_stdin_bytes():
     start_time = time.time()
     while time.time() - start_time < 0.1:
         assert reader.poll() is None
+        assert reader.try_wait() is None
 
 
 def test_kill_with_grandchild_stderr_capture():
@@ -908,6 +914,7 @@ def test_kill_with_grandchild_stderr_capture():
     start_time = time.time()
     while time.time() - start_time < 0.1:
         assert reader.poll() is None
+        assert reader.try_wait() is None
 
 
 def ps_observes_pid(pid):

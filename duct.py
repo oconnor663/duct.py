@@ -67,6 +67,15 @@ except ImportError:
 
 
 try:
+    from warnings import deprecated
+except ImportError:
+    # warnings.deprecated was added in Python 3.13. For older versions, use a
+    # no-op placeholder.
+    def deprecated(_msg):
+        return lambda f: f
+
+
+try:
     # not defined in Python 2
     PIPE_CLOSED_ERROR = BrokenPipeError
 except NameError:
@@ -768,6 +777,15 @@ class Handle:
         else:
             return output
 
+    # The .poll() method was originally called .try_wait(), after the Rust method name.
+    # v1.0 changed it to .poll() for consistency with the Python standard library, but
+    # .try_wait() had been the name for 5 years, so this deprecated alias was added to
+    # avoid unnecessary breakage.
+    @deprecated("use poll instead")
+    def try_wait(self):
+        r"""A deprecated alias for :func:`poll`"""
+        return self.poll()
+
     def kill(self):
         r"""Send a kill signal to the child process(es). This is equivalent to
         :func:`Popen.kill`, which uses ``SIGKILL`` on Unix.
@@ -1445,6 +1463,15 @@ class ReaderHandle(io.IOBase):
         >>> assert input_bytes == output_bytes
         """
         return self._handle.poll()
+
+    # The .poll() method was originally called .try_wait(), after the Rust method name.
+    # v1.0 changed it to .poll() for consistency with the Python standard library, but
+    # .try_wait() had been the name for 5 years, so this deprecated alias was added to
+    # avoid unnecessary breakage.
+    @deprecated("use poll instead")
+    def try_wait(self):
+        r"""A deprecated alias for :func:`poll`"""
+        return self.poll()
 
     def kill(self):
         r"""Call :func:`kill` on the inner :class:`Handle`.
