@@ -1202,6 +1202,10 @@ def encode_with_universal_newlines(s):
 # keys uppercased. We need to do a similar conversion, or else additions and
 # removals in that copy won't interact properly with the inherited parent
 # environment.
+#
+# Note that Windows itself is case-preserving with environment variable names,
+# but Python's `os.environ` uppercases everything, and we don't try to work
+# around that.
 def convert_env_var_name(var):
     if is_windows():
         return var.upper()

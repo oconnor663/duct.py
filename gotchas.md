@@ -170,14 +170,17 @@ but at least multiple Duct callers on different threads are protected.
 ## Matching platform case-sensitivity for environment variables
 
 Environment variable names are case-sensitive on Unix but case-insensitive on
-Windows, and Duct tries to respect each platform's behavior. Methods like
-`env_remove` require keeping an internal map of variables, and map keys are
-always case-sensitive, so Duct explicitly converts all variable names to
-uppercase on Windows.
+Windows, and Duct tries to respect each platform's behavior. Windows variable
+names are also case-_preserving_, and some system variables are mixed-case by
+default (including `Path` and `SystemRoot`). Python's `os.environ` map
+uppercases all variable names, and the Python implementation of Duct does the
+same. Rust's `std::env` API preserves casing, and the Rust implementation of
+Duct also preserves casing, using an internal `OsString` wrapper type for
+case-insensitive equality and hashing.
 
 Duct makes no guarantees about non-ASCII environment variable names. Their
 behavior is implementation-dependent, platform-dependent, programming
-language-dependent, and probably also human language-dependent.
+language-dependent, and probably also human-language-dependent.
 
 ## Using IO threads to avoid blocking children
 
