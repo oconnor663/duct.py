@@ -944,7 +944,7 @@ IOContext = namedtuple(
 @contextmanager
 def new_iocontext():
     # Hardcode the standard file descriptors. We can't rely on None here,
-    # becase stdout/stderr swapping needs to work.
+    # because stdout/stderr swapping needs to work.
     context = IOContext(
         stdin=0,
         stdout=1,
