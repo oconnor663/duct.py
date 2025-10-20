@@ -1,0 +1,28 @@
+[project]
+name = "duct"
+version = "1.0.0"
+description = "a library for running child processes"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Jack O'Connor", email = "oconnor663@gmail.com" },
+]
+requires-python = ">=3.9"
+
+[project.urls]
+Repository = "https://github.com/oconnor663/duct.py"
+Documentation = "https://ductpy.readthedocs.io"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = ["duct.py"]
+
+[dependency-groups]
+dev = [
+    "black>=25.9.0",
+    "flake8>=7.3.0",
+    "pytest>=8.4.2",
+]

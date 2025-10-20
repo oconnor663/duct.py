@@ -19,11 +19,10 @@ print("Executing:", " ".join(pytest_cmd))
 subprocess.check_call(pytest_cmd)
 
 print("Executing: flake8")
-subprocess.check_call(["flake8", "--max-line-length=88"])
+files = ["duct.py", "test_duct.py", "ci.py"]
+subprocess.check_call(["flake8", "--max-line-length=88"] + files)
 
 print("Executing: black --check")
-subprocess.check_call(
-    ["black", "--check", "duct.py", "test_duct.py", "setup.py", "ci.py"]
-)
+subprocess.check_call(["black", "--check"] + files)
 
 print("Success!")
