@@ -154,18 +154,33 @@ Unix-like platforms when the `dir` method is in use.
 
 ## Preventing pipe inheritance races on Windows
 
-Spawning child processes on Windows involves duplicating pipes and making them
-inheritable. Unfortunately, that means that *any* child spawned on other
-threads while those pipes are alive [will inherit
-them](https://web.archive.org/web/20130610174104/https://support.microsoft.com/kb/315939).
+Spawning child processes on both Unix and Windows involves marking their pipes
+"inheritable" in some way. In the Unix fork-exec model, the forked child
+process gets copies of all the parent's pipes, and it marks the ones that it
+wants to remain open after exec. Windows doesn't use forking, however, and
+making pipes inheritable happens within the parent process itself.
+Unfortunately, that means that *any* child spawned while a pipe is inheritable
+will inherit it, which is a [race condition in multithreaded
+programs](https://web.archive.org/web/20130610174104/https://support.microsoft.com/kb/315939).
 One child might accidentally receive a copy of another child's stdin pipe,
 preventing the other child from reading EOF and leading to deadlocks. The Rust
 standard library [has an internal
-mutex](https://github.com/rust-lang/rust/blob/1.14.0/src/libstd/sys/windows/process.rs#L169-L179)
+mutex](https://github.com/rust-lang/rust/blob/1.91.0/library/std/src/sys/process/windows.rs#L322-L333)
 to prevent this race, but the Python standard library [does
-not](https://bugs.python.org/issue24909). In Python, Duct uses its own internal
-mutex to prevent this race. That doesn't prevent races with other libraries,
-but at least multiple Duct callers on different threads are protected.
+not](https://bugs.python.org/issue24909). ~~In Python, Duct uses its own
+internal mutex to prevent this race. That doesn't prevent races with other
+libraries, but at least multiple Duct callers on different threads are
+protected.~~
+
+**Update:** Windows 7 added
+[`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
+a whitelist/allowlist for handles that a child process will inherit. As of
+Python 3.7, setting `close_fds=True` (also now the default) in
+`subprocess.Popen` uses this feature to support inheriting stdin/stdout/stderr
+while avoiding unintentional inheritance. This *does* prevent races with other
+libraries, as long as they go through Python's `subprocess` module or use a
+similar technique. As of v1.0.1, Duct no longer has its own workarounds for
+these issues.
 
 ## Matching platform case-sensitivity for environment variables
 

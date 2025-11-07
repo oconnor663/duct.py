@@ -1005,3 +1005,58 @@ def test_zombies_reaped():
         while ps_observes_pid(pid):
             tries += 1
             assert tries < 100, f"child #{i} (PID {pid}) never went away?"
+
+
+def test_pipe_inheritance():
+    """Spawn 300 child processes: 100 writers, 100 readers, and 100 waiters.
+    The goal is to see whether any of the waiters inherits a write end of one
+    of the pipes. If so, it will deadlock a reader and deadlock this test.
+
+    You can make this fail on Windows and macOS by passing `close_fds=False` to
+    `subprocess.Popen` in duct.py. The Windows deadlock is because pipes are
+    briefly marked inheritable process-wide during a critical section when
+    spawning child processes, and `close_fds=False` turns off the
+    whitelist/allowlist that works around that. I think the macOS deadlock is
+    because macOS doesn't support `pipe2`, so pipe creation itself has a brief
+    race with child spawning, before `FD_CLOEXEC` takes effect."""
+    children = []
+    threads = []
+
+    def reader_writer_fn():
+        # Open a pipe for the child to read from. This can deadlock if a waiter
+        # inherits this pipe and keeps it open.
+        pipe_reader_fd, pipe_writer_fd = os.pipe()
+        pipe_reader = os.fdopen(pipe_reader_fd, "rb")
+        pipe_writer = os.fdopen(pipe_writer_fd, "wb")
+        writer_child = echo_cmd("foo").stdout_file(pipe_writer).start()
+        children.append(writer_child)
+        pipe_writer.close()
+        reader_child = cat_cmd().stdin_file(pipe_reader).reader()
+        children.append(reader_child)
+        pipe_reader.close()
+        writer_child.wait()
+        assert reader_child.read().strip() == b"foo"
+
+    for _ in range(100):
+        thread = threading.Thread(target=reader_writer_fn, daemon=True)
+        thread.start()
+        threads.append(thread)
+
+        # Spawn a child that won't exit until we kill it. This is intended to
+        # keep pipes open if they're inherited unintentionally. Without
+        # something like this, we'd need an inheritance *cycle* between
+        # readers, which might be unlikely.
+        children.append(sleep_cmd(365 * 24 * 60 * 60).unchecked().start())
+
+    try:
+        for thread in threads:
+            # These threads should terminate very quickly in the absence of
+            # deadlocks. 10 seconds is generous.
+            thread.join(timeout=10)
+            assert not thread.is_alive(), "deadlock!"
+    finally:
+        # `daemon=True` above means that we technically don't need to worry
+        # about background threads outliving this test, but it's better to
+        # unblock them.
+        for child in children:
+            child.kill()

@@ -554,7 +554,11 @@ def start_cmd(context, prog, args):
     # The innermost hooks are pushed last, and we execute them last.
     for hook in context.before_spawn_hooks:
         hook(command, kwargs)
-    return safe_popen(command, **kwargs)
+    # Because of pipe inheritance issues on both Unix and Windows, we used to
+    # have to think carefully about the `close_fds` flag, and we wrapped child
+    # spawning in a mutex. But as of Python 3.7, `subprocess.Popen` has safe
+    # defaults for all of this. Progress!
+    return SharedChild(command, **kwargs)
 
 
 def start_pipe(context, left_expr, right_expr):
@@ -1150,37 +1154,8 @@ def maybe_canonicalize_exe_path(exe_name, iocontext):
         return exe_name
 
 
-popen_lock = threading.Lock()
-
-
 def is_windows():
     return os.name == "nt"
-
-
-# This wrapper works around two major deadlock issues to do with pipes. The
-# first is that, before Python 3.2 on POSIX systems, os.pipe() creates
-# inheritable file descriptors, which leak to all child processes and prevent
-# reads from reaching EOF. The workaround for this is to set close_fds=True on
-# POSIX, which was not the default in those versions. See PEP 0446 for many
-# details.
-#
-# TODO: Revisit this workaround when we drop Python 2 support.
-#
-# The second issue arises on Windows, where we're not allowed to set
-# close_fds=True while also setting stdin/stdout/stderr. Descriptors from
-# os.pipe() on Windows have never been inheritable, so it would seem that we're
-# safe. However, the Windows implementation of subprocess.Popen() creates
-# temporary inheritable copies of its descriptors, and these can leak. The
-# workaround for this is to protect Popen() with a global lock. See
-# https://bugs.python.org/issue25565.
-#
-# This function also returns a SharedChild object, which wraps
-# subprocess.Popen. That type works around another race condition to do with
-# signaling children.
-def safe_popen(*args, **kwargs):
-    close_fds = not is_windows()
-    with popen_lock:
-        return SharedChild(*args, close_fds=close_fds, **kwargs)
 
 
 # We could let our pipes do this for us, by opening them in universal newlines
