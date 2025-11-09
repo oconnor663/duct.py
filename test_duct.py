@@ -1008,55 +1008,110 @@ def test_zombies_reaped():
 
 
 def test_pipe_inheritance():
-    """Spawn 300 child processes: 100 writers, 100 readers, and 100 waiters.
-    The goal is to see whether any of the waiters inherits a write end of one
-    of the pipes. If so, it will deadlock a reader and deadlock this test.
+    """Spawn lots of child processes, 100 `cat`s and 100 `sleep`s at a time,
+    for a fixed number of seconds (longer in CI). The goal is to see whether
+    any of the `sleep`s inherits the write end of a pipe that one of the `cat`s
+    is trying to read. If so, that `cat` will hang. Detect that with a
+    `wait_timeout`, and fail if we see it.
 
-    You can make this fail on Windows and macOS by passing `close_fds=False` to
-    `subprocess.Popen` in duct.py. The Windows deadlock is because pipes are
-    briefly marked inheritable process-wide during a critical section when
-    spawning child processes, and `close_fds=False` turns off the
-    whitelist/allowlist that works around that. I think the macOS deadlock is
-    because macOS doesn't support `pipe2`, so pipe creation itself has a brief
-    race with child spawning, before `FD_CLOEXEC` takes effect."""
-    children = []
-    threads = []
+    This test is most relevant in Python, where the standard library doesn't
+    protect `subprocess.Popen` with a global mutex, which means that spawning
+    child processes from multiple threads is prone to deadlocks on Windows. The
+    updated `close_fds=True` default in Python 3.7+ is a workaround, and the
+    Python version of this tests exercises that. The Rust standard library has
+    a global `Mutex` that prevents that particular race. However, Python's
+    `close_fds` feature also works around a bug on macOS, where there's no
+    `pipe2` syscall, so we can't open pipes and mark them `CLOEXEC` atomically.
+    Rust is vulnerable to this race."""
 
-    def reader_writer_fn():
-        # Open a pipe for the child to read from. This can deadlock if a waiter
-        # inherits this pipe and keeps it open.
-        pipe_reader_fd, pipe_writer_fd = os.pipe()
-        pipe_reader = os.fdopen(pipe_reader_fd, "rb")
-        pipe_writer = os.fdopen(pipe_writer_fd, "wb")
-        writer_child = echo_cmd("foo").stdout_file(pipe_writer).start()
-        children.append(writer_child)
-        pipe_writer.close()
-        reader_child = cat_cmd().stdin_file(pipe_reader).reader()
-        children.append(reader_child)
-        pipe_reader.close()
-        writer_child.wait()
-        assert reader_child.read().strip() == b"foo"
+    test_duration_secs = 1
+    if duration_env := os.environ.get("DUCT_RACE_TEST_SECONDS"):
+        test_duration_secs = int(duration_env)
+        print(f"test duration: {test_duration_secs} seconds")
+    test_start = time.monotonic()
+    test_deadline = test_start + test_duration_secs
+    spawns_per_iteration = 100
+    # If they don't hang, the `cat` processes should exit almost immediately,
+    # so a 1 second wait is generous.
+    deadlock_timeout = 1.0
+    start_barrier = threading.Barrier(2)
+    end_barrier = threading.Barrier(2)
+    deadlocked = False
+    finished = False
+    iterations = 0
 
-    for _ in range(100):
-        thread = threading.Thread(target=reader_writer_fn, daemon=True)
-        thread.start()
-        threads.append(thread)
+    # We don't yet support waiting on a Duct handle with a timeout in Python.
+    # (We do in Rust though.) Use a daemon thread to fake it.
+    def wait_with_timeout(handle, timeout):
+        wait_thread = threading.Thread(target=handle.wait, daemon=True)
+        wait_thread.start()
+        wait_thread.join(timeout)
+        still_running = wait_thread.is_alive()
+        return still_running
 
-        # Spawn a child that won't exit until we kill it. This is intended to
-        # keep pipes open if they're inherited unintentionally. Without
-        # something like this, we'd need an inheritance *cycle* between
-        # readers, which might be unlikely.
-        children.append(sleep_cmd(365 * 24 * 60 * 60).unchecked().start())
+    def spawn_sleepers():
+        # A background thread spawns `sleep`s.
+        sleep_expr = sleep_cmd(1_000_000).unchecked()
+        while not deadlocked and not finished:
+            sleeps = []
+            start_barrier.wait()
+            # Spawn all the `sleep`s.
+            for _ in range(spawns_per_iteration):
+                sleeps.append(sleep_expr.start())
+            end_barrier.wait()
+            # Clean up `sleep`s *after* the end barrier, so that we wait until the main
+            # thread has confirmed there are no deadlocks.
+            for sleep_handle in sleeps:
+                sleep_handle.kill()
+                sleep_handle.wait()
 
-    try:
-        for thread in threads:
-            # These threads should terminate very quickly in the absence of
-            # deadlocks. 10 seconds is generous.
-            thread.join(timeout=10)
-            assert not thread.is_alive(), "deadlock!"
-    finally:
-        # `daemon=True` above means that we technically don't need to worry
-        # about background threads outliving this test, but it's better to
-        # unblock them.
-        for child in children:
-            child.kill()
+    # Not a daemon thread, so that we don't exit with `sleep`s running.
+    sleep_thread = threading.Thread(target=spawn_sleepers)
+    sleep_thread.start()
+
+    # This thread spawns `cat`s.
+    while not deadlocked and not finished:
+        iterations += 1
+        cats = []
+        cat_expr = (
+            cat_cmd()
+            # `stdin_bytes` opens a pipe
+            .stdin_bytes(b"foo")
+            # `pipe` opens a pipe (of course)
+            .pipe(cat_cmd())
+            # Capturing output also opens a pipe.
+            .stdout_capture().unchecked()
+        )
+        start_barrier.wait()
+        # Spawn all the `cat`s.
+        for _ in range(spawns_per_iteration):
+            cats.append(cat_expr.start())
+        # Check for deadlocks *before* the end barrier, so that `sleep` cleanup doesn't
+        # happen until this loop is done.
+        for cat_handle in cats:
+            # Only do a `wait_timeout` if we haven't seen a deadlock yet, so that we
+            # exit quickly once we know the test has failed.
+            if not deadlocked:
+                still_running = wait_with_timeout(cat_handle, deadlock_timeout)
+                if still_running:
+                    deadlocked = True
+        # Check the deadline *before* the end barrier, so that both loops are guaranteed
+        # to see the flag in the next iteration.
+        if time.monotonic() >= test_deadline:
+            finished = True
+        end_barrier.wait()
+        # Kill and reap `cat`s *after* the end barrier, because `wait` blocks on their
+        # IO threads, which (if there are inheritance bugs) might be kept running by a
+        # `sleep`. Deadlocking this test isn't the end of the world, because either way
+        # it's a CI failure, but it's a lot nicer to return a clear message quickly.
+        # Note that we don't have to worry about a cycle of `cat`s inheriting each
+        # other's pipes, because only this thread is spawning `cat`s.
+        for cat_handle in cats:
+            cat_handle.kill()
+            cat_handle.wait()
+
+    elapsed = time.monotonic() - test_start
+    assert not deadlocked, (
+        f"deadlock after {iterations} iterations "
+        f"({elapsed - deadlock_timeout:.3f} seconds)"
+    )

@@ -20,3 +20,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: astral-sh/setup-uv@v5
     - run: uv run --python ${{ matrix.python-version }} ci.py
+    - name: run test_pipe_inheritance for 5 minutes
+      run: uv run --python ${{ matrix.python-version }} ci.py
+      env:
+        DUCT_RACE_TEST_SECONDS: 300
