@@ -23,6 +23,7 @@ affect the implementation.
 * [Adding `./` to program names given as relative paths](#adding--to-program-names-given-as-relative-paths)
 * [Preventing `dir` from affecting relative program paths on Unix](#preventing-dir-from-affecting-relative-program-paths-on-unix)
 * [Preventing pipe inheritance races on Windows](#preventing-pipe-inheritance-races-on-windows)
+* [Preventing pipe inheritance races on macOS](#preventing-pipe-inheritance-races-on-macos)
 * [Matching platform case-sensitivity for environment variables](#matching-platform-case-sensitivity-for-environment-variables)
 * [Using IO threads to avoid blocking children](#using-io-threads-to-avoid-blocking-children)
 * [Killing grandchild processes?](#killing-grandchild-processes)
@@ -181,6 +182,29 @@ while avoiding unintentional inheritance. This *does* prevent races with other
 libraries, as long as they go through Python's `subprocess` module or use a
 similar technique. As of v1.0.1, Duct no longer has its own workarounds for
 these issues.
+
+## Preventing pipe inheritance races on macOS
+
+Unix pipes are "inheritable" by default, but this is an old default from before
+multithreading was common, and most applications (that aren't single-threaded
+shells) need to override it. Standard library functions like `os.pipe()` in
+Python and `std::io::pipe()` in Rust take care of this for you. On Linux and
+most other Unixes, the mechanism for this is the `O_CLOEXEC` flag to the
+`pipe2` system call, which is "atomic": there's no chance for other threads to
+observe a pipe after it's created but before `CLOEXEC` is set. Unfortunately,
+macOS doesn't support `pipe2`. On macOS, opening a pipe and setting `CLOEXEC`
+are two separate syscalls, and there's a brief race condition in between where
+other threads spawning child processes can accidentally inherit unrelated
+pipes.
+
+In Python, setting `close_fds=True` in `subprocess.Popen` works around this
+problem. Accidental inheritance is still possible, but it gets cleaned up right
+before exec. Rust doesn't have a similar feature in `std::process::Command`.
+Rather than replicating it, the Rust implementation of Duct uses a global mutex
+to prevent pipe opening from overlapping with child spawning on macOS.
+Unfortunately, this can only protect pipes that Duct opens itself. Callers who
+open their own pipes (to pass them to `stdout_file` for example), and who might
+race with unrelated threads on macOS, need to make their own global mutexes.
 
 ## Matching platform case-sensitivity for environment variables
 
