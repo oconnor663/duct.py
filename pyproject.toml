@@ -1,6 +1,6 @@
 [project]
 name = "duct"
-version = "1.0.0"
+version = "1.0.1"
 description = "a library for running child processes"
 readme = "README.md"
 license = "MIT"
