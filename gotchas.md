@@ -27,6 +27,7 @@ affect the implementation.
 * [Matching platform case-sensitivity for environment variables](#matching-platform-case-sensitivity-for-environment-variables)
 * [Using IO threads to avoid blocking children](#using-io-threads-to-avoid-blocking-children)
 * [Killing grandchild processes?](#killing-grandchild-processes)
+* [Waiting with a timeout](#waiting-with-a-timeout)
 
 ## Reporting errors by default
 
@@ -57,9 +58,10 @@ reading all of its input. Most standard libraries get this right.
 
 Notably on Unix, this requires the process to suppress `SIGPIPE`.
 Implementations in languages that don't suppress `SIGPIPE` by default (C/C++?)
-have no choice but to set a signal handler from library code, which might
-conflict with application code or other libraries. There is no good solution to
-this problem.
+have to configure signal handling from library code, which might conflict with
+application code or other libraries in the rare case that something does want
+to receive that signal. (See [Waiting with a timeout](#waiting-with-a-timeout)
+below for more on handling signals from library code.)
 
 ## Cleaning up zombie children
 
@@ -101,8 +103,7 @@ PID. It's not likely, but all of that could happen just before the call to
 is why the Rust standard library [doesn't allow shared access to child
 processes](https://doc.rust-lang.org/std/process/struct.Child.html#method.kill).
 
-It's possible to avoid this race using a newer POSIX API called
-[`waitid`](https://pubs.opengroup.org/onlinepubs/9699919799/functions/waitid.html).
+It's possible to avoid this race using a newer POSIX API called [`waitid`].
 That function has a `WNOWAIT` flag that leaves the child in its zombie state,
 so that its PID isn't freed for reuse. That gives the waiting thread a chance
 to set a flag to block further kills, before reaping the child. Duct uses this
@@ -345,3 +346,41 @@ objects](https://docs.microsoft.com/en-us/windows/win32/procthread/job-objects))
 but even there it sounds like some important features aren't supported on
 Windows 7. Realistically, there won't be good techniques for Duct to use to
 solve this problem for many years.
+
+## Waiting with a timeout
+
+The Windows [`WaitForSingleObject`] function has a timeout argument, but the
+Unix [`waitpid`], [`waitid`], and [`pthread_join`] functions do not. That makes
+it complicated to do any sort of waiting with a timeout on Unix.
+
+- for threads we can add code
+  - what does Python do?
+    - PyEvent on thread exit
+    - also their locks are actually all condvars on the inside and support
+      waiting with a timeout
+- for children we need to handle SIGCHLD
+  - what does Python do? (timeout?)
+    - OMG does Python have the wait/try_wait race?!
+  - signal_hook_registry race condition
+    - can we just have sigaction() write back to the global?
+  - does Rust Child::wait fail to handle eintr?
+
+
+I want try_wait/poll to always actually check, because you might be calling it
+in response to SIGCHLD or something like that, and in that case it's
+unacceptable for a race against the blocking thread to cause you to return
+None.
+
+That means that all reaping should actually be done by calling into wait().
+
+That means that double locking is viable, like the old Python implementation.
+Maybe we don't need a condvar?
+- But what does that mean for timeouts? What's cleaner? Unix has SIGCHLD, and
+  Windows doesn't have to worry about reaping, but what would we need to do if
+  there was a timeout parameter to the Unix waitid? In that case we would need
+  the condvar.
+
+[`WaitForSingleObject`]: https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitforsingleobject
+[`waitpid`]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/waitpid.html
+[`waitid`]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/waitid.html
+[`pthread_join`]: https://pubs.opengroup.org/onlinepubs/009695399/functions/pthread_join.html
