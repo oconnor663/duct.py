@@ -266,7 +266,9 @@ methods like
 Python or
 [`Handle::try_wait`](https://docs.rs/duct/latest/duct/struct.Handle.html#method.try_wait)
 in Rust need to explicitly check whether IO threads have exited before doing
-any blocking joins.
+any blocking joins. These situations are also why we can't use files instead of
+pipes to capture output: we'd have no way to know whether grandchild processes
+were finished writing.
 
 ## Killing grandchild processes?
 
