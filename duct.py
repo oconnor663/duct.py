@@ -56,6 +56,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 
 try:
@@ -66,9 +67,9 @@ except ImportError:
         pass
 
 
-try:
+if sys.version_info >= (3, 13):
     from warnings import deprecated
-except ImportError:
+else:
     # warnings.deprecated was added in Python 3.13. For older versions, use a
     # no-op placeholder.
     def deprecated(_msg):
@@ -1050,6 +1051,7 @@ class OutputCaptureContext:
             return
 
         def read_fn():
+            assert self._read_pipe is not None
             with self._read_pipe:
                 return self._read_pipe.read()
 
@@ -1105,8 +1107,8 @@ class DaemonicThread(threading.Thread):
         except Exception as e:
             self._exception = e
 
-    def join(self):
-        threading.Thread.join(self)
+    def join(self, timeout=None):
+        threading.Thread.join(self, timeout=timeout)
         if self._exception is not None:
             raise self._exception
         return self._output
