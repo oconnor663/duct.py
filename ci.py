@@ -20,9 +20,10 @@ subprocess.check_call(pytest_cmd)
 
 print("Executing: flake8")
 files = ["duct.py", "test_duct.py", "ci.py"]
-subprocess.check_call(["flake8", "--max-line-length=88"] + files)
+subprocess.check_call(["uvx", "flake8", "--max-line-length=88"] + files)
 
-print("Executing: black --check")
-subprocess.check_call(["black", "--check"] + files)
+if sys.version_info >= (3, 10):  # Formatting differs between 3.9 and 3.10.
+    print("Executing: black --check")
+    subprocess.check_call(["uvx", "black", "--check"] + files)
 
 print("Success!")

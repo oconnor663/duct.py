@@ -60,8 +60,7 @@ def sleep_cmd(seconds):
 
 
 def head_bytes(c):
-    code = textwrap.dedent(
-        """\
+    code = textwrap.dedent("""\
         import os
         # PyPy3 on Travis has a wonky bug where stdin and stdout can't read
         # unicode. This is a workaround. The bug doesn't repro on Arch, though,
@@ -70,10 +69,7 @@ def head_bytes(c):
         stdout = os.fdopen(1, 'w')
         input_str = stdin.read({0})
         stdout.write(input_str)
-        """.format(
-            c
-        )
-    )
+        """.format(c))
     return cmd("python", "-c", code)
 
 
@@ -82,14 +78,10 @@ def pwd():
 
 
 def echo_var(var_name):
-    code = textwrap.dedent(
-        """\
+    code = textwrap.dedent("""\
         import os
         print(os.environ.get("{0}", ""))
-        """.format(
-            var_name
-        )
-    )
+        """.format(var_name))
     return cmd("python", "-c", code)
 
 
@@ -98,15 +90,11 @@ def echo_x():
 
 
 def replace(a, b):
-    code = textwrap.dedent(
-        """\
+    code = textwrap.dedent("""\
         import sys
         input_str = sys.stdin.read()
         sys.stdout.write(input_str.replace({0}, {1}))
-        """.format(
-            repr(a), repr(b)
-        )
-    )
+        """.format(repr(a), repr(b)))
     return cmd("python", "-c", code)
 
 
@@ -196,16 +184,14 @@ def test_pipe():
 def test_pipe_SIGPIPE():
     """On the left side of the pipe, run a command that outputs text forever.
     That program should receive SIGPIPE when the right side terminates."""
-    zeroes_code = textwrap.dedent(
-        """\
+    zeroes_code = textwrap.dedent("""\
         import sys
         try:
             while True:
                 sys.stdout.write('0')
         except Exception:
             pass
-        """
-    )
+        """)
     zeroes = cmd("python", "-c", zeroes_code)
     out = zeroes.unchecked().pipe(head_bytes(5)).read()
     assert "00000" == out
@@ -482,20 +468,16 @@ def test_run_local_path():
     there's no difference between that and Path('./test.sh')."""
     if os.name == "nt":
         extension = ".bat"
-        code = textwrap.dedent(
-            """\
+        code = textwrap.dedent("""\
             @echo off
             echo foo
-            """
-        )
+            """)
     else:
         extension = ".sh"
-        code = textwrap.dedent(
-            """\
+        code = textwrap.dedent("""\
             #! /bin/sh
             echo foo
-            """
-        )
+            """)
     # Use a random name just in case.
     random_letters = binascii.hexlify(os.urandom(4)).decode()
     local_script = "test_" + random_letters + extension
@@ -685,9 +667,7 @@ p = subprocess.Popen(["python", "-c", '''{}'''])
 print("started")
 sys.stdout.flush()
 p.wait()
-""".format(
-        grandchild_code
-    )
+""".format(grandchild_code)
 
     # Capturing stderr means an IO thread is spawned, even though we're using a
     # ReaderHandle to read stdout. What we're testing here is that kill()
@@ -953,7 +933,7 @@ def test_zombies_reaped():
     child_pids = []
 
     # Spawn 10 children that will exit immediately.
-    (stdout_reader, stdout_writer) = os.pipe()
+    stdout_reader, stdout_writer = os.pipe()
     for _ in range(10):
         handle = cmd("true").stdout_file(stdout_writer).start()
         child_pids.append(handle.pids()[0])
@@ -961,7 +941,7 @@ def test_zombies_reaped():
 
     # Spawn 10 children that will wait on stdin to exit. The previous 10
     # children will probably exit while we're doing this.
-    (stdin_reader, stdin_writer) = os.pipe()
+    stdin_reader, stdin_writer = os.pipe()
     for _ in range(10):
         handle = cmd("cat").stdin_file(stdin_reader).stdout_file(stdout_writer).start()
         child_pids.append(handle.pids()[0])
